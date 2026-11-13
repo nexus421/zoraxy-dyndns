@@ -1,0 +1,73 @@
+name: Build
+
+# Runs on every push and pull request, and as the build step of release.yml. Each architecture builds the native
+# binary on its own runner, runs the unit tests and checks .introspect against the binary. amd64 also runs the
+# end-to-end test against a real Zoraxy. Both binaries are uploaded as artifacts under their release names.
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Dynamically linked against glibc: glibc and zlib get their security updates from the OS
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: graalvm/setup-graalvm@f70bc8032f90a104502824a54bcb94b6f01715bc # v1.6.8
+        with:
+          java-version: '25'
+          distribution: graalvm-community
+
+      - uses: gradle/actions/setup-gradle@3f5f9adaf7d9fecd50b5935e54106014257a94e6 # v6.4.0
+
+      - run: ./gradlew build
+
+      - name: Build native image
+        # The flags come from META-INF/native-image in the JAR
+        run: native-image -jar build/libs/zoraxy-dyndns.jar -o build/zoraxy-dyndns
+
+      - name: .introspect must match what the binary prints
+        # The Zoraxy plugin store reads .introspect from the repository root
+        run: diff <(./build/zoraxy-dyndns -introspect) .introspect
+
+      - name: End-to-end test against a real Zoraxy
+        if: matrix.arch == 'amd64'
+        env:
+          # Zoraxy 3.3.5 is published under this tag, the sum is the one GitHub shows for the asset
+          ZORAXY_TAG: v3.3.5-rc5
+          ZORAXY_SHA256: d07f0fd019fc0091eba52ba671c0d4f0aca30dec81674b95f9d89e5c96af3a0e
+        run: |
+          curl -fsSL -o /tmp/zoraxy "https://github.com/tobychui/zoraxy/releases/download/${ZORAXY_TAG}/zoraxy_linux_amd64"
+          echo "$ZORAXY_SHA256  /tmp/zoraxy" | sha256sum -c
+          chmod +x /tmp/zoraxy
+          # The test needs port 80 for its plain HTTP case
+          sudo env "PATH=$PATH" test/e2e.sh /tmp/zoraxy build/zoraxy-dyndns
+
+      - name: Rename for the plugin store
+        # Store download URLs are <.releaseurl>/<last segment of the plugin ID>_<os>_<arch>
+        run: mv build/zoraxy-dyndns build/dyndns_linux_${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dyndns_linux_${{ matrix.arch }}
+          path: build/dyndns_linux_${{ matrix.arch }}
+
+      - name: Upload test reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-${{ matrix.arch }}
+          path: build/reports/tests/

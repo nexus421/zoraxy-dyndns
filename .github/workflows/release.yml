@@ -1,0 +1,51 @@
+name: Release
+
+# Runs when a release is published on GitHub. The tag must match the version in build.gradle.kts (tag v1.2.0 needs
+# version = "1.2.0"), otherwise the run fails and attaches nothing. Then it runs the whole build of build.yml and
+# attaches dyndns_linux_amd64 and dyndns_linux_arm64 together with their SHA-256 sums. These are the names the
+# Zoraxy plugin store downloads, see .releaseurl.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Check that the tag matches the version
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' build.gradle.kts)"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match v$version from build.gradle.kts"
+            exit 1
+          fi
+
+  build:
+    needs: version
+    uses: ./.github/workflows/build.yml
+
+  attach:
+    needs: build
+    runs-on: ubuntu-latest
+    # Only this job may change the release
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: dyndns_linux_*
+          path: dist
+          merge-multiple: true
+
+      - name: Attach the binaries and their checksums to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          for f in dyndns_linux_*; do sha256sum "$f" > "$f.sha256"; done
+          gh release upload "$GITHUB_REF_NAME" dyndns_linux_* --clobber --repo "$GITHUB_REPOSITORY"
