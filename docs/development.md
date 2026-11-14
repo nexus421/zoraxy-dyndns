@@ -114,8 +114,8 @@ Verified:
   stale, unknown rules, Zoraxy unreachable, a failed reconcile after saving), the page itself (escaping, no inline
   script or style, the password shown once, the placeholder host) and the HTTP server run against
   [FakeZoraxy](../src/test/kotlin/bayern/kickner/zoraxy/dyndns/FakeZoraxy.kt), an in-memory plugin API.
-- The end-to-end test against Zoraxy 3.3.5 (`v3.3.5-rc5`), all 79 checks, locally with the JAR on the JVM inside a
-  sandbox without network.
+- The end-to-end test against Zoraxy 3.3.3, 3.3.4 and 3.3.5 (`v3.3.5-rc5`), all 79 checks each, locally with the JAR
+  on the JVM inside a sandbox without network. CI runs it against 3.3.5 with the native binary.
 - The plugin page clicked through in the real Zoraxy iframe: adding a client, the router settings, Copy without
   HTTPS, Enter in a field, an invalid fixed entry, deleting with the second click, light and dark mode following
   Zoraxy's switch live, phone width, no CSP violation in the console.

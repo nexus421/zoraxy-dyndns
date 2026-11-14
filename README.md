@@ -48,7 +48,7 @@ coming, new features only rarely. Issues and bug reports are welcome.
 ## Quick start
 
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
-(tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
+(tested with 3.3.3, 3.3.4 and 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
 1. Install the plugin by hand as described in [Deployment](docs/deployment.md). The listing in Zoraxy's plugin store
    is on its way.

@@ -3,7 +3,7 @@
 ## Installation
 
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
-(tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
+(tested with 3.3.3, 3.3.4 and 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
 From the plugin store, once it is listed there: Plugins, App Store, DynDNS Whitelist. Zoraxy downloads the binary
 and the icon itself.
@@ -38,12 +38,18 @@ plugin's page and add the clients, see [Usage](usage.md#the-plugin-page).
    plugin switches the whitelist on for you.
 2. **DynDNS host**, e.g. `dyndns.example.com`, with a DNS record pointing to Zoraxy:
    - access rule **without** whitelist (e.g. `default`), otherwise the router is blocked before the plugin sees it
-   - upstream an unused address such as `127.0.0.1:1`, so every other path fails. Zoraxy needs a target, and
-     `127.0.0.1` never leaves the server while port 1 is reserved and not used, so nothing is reachable through
-     this host except the plugin's `/nic/update`
+   - upstream an unused address such as `127.0.0.1:1`, so every other path fails. Zoraxy refuses a rule without
+     target ("endpoint not defined"). `127.0.0.1` never leaves the server, and TCP port 1 belongs to TCPMUX, which
+     practically no system runs, so every other path ends in an error (Zoraxy answers 521). Check it on your
+     server with `ss -ltn 'sport = :1'`, which must print no listener
    - rate limiting on: it runs before the plugin and stops password guessing
    - tag `dyndns`
 3. **Plugins, tag groups**: add the plugin to the tag `dyndns`.
+
+Zoraxy hands a request to the plugin after the access rule, rate limit and its own login of the host, and before the
+upstream. A separate DynDNS host is therefore not strictly needed: the tag `dyndns` on an existing host also sends
+its `/nic/update` to the plugin while every other path still reaches that host's backend. That host must have no
+whitelist and no Zoraxy login, so a separate host is the safer choice.
 
 ## TLS
 

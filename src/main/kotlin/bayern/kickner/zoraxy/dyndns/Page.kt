@@ -127,7 +127,7 @@ private fun FlowContent.setup(config: Config) {
             li {
                 +"HTTP Proxy, Create Proxy Rule: type host, that name, target "
                 code { +"127.0.0.1:1" }
-                +". Nothing listens there, so every path except "
+                +". Nothing listens there on a normal server, so every path except "
                 code { +"/nic/update" }
                 +" ends in an error. Zoraxy needs a target."
             }
