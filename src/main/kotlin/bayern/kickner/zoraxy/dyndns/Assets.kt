@@ -152,12 +152,16 @@ const val APP_JS = """
     notice.scrollIntoView({ block: "start" });
   };
 
+  // Asks again by changing the button: the second click confirms, but only after a short pause, so a double-click
+  // never deletes in one go
   const arm = button => {
     const text = button.textContent;
     button.textContent = button.dataset.confirm;
     button.classList.add("armed");
+    button.dataset.armedAt = Date.now();
     setTimeout(() => { button.textContent = text; button.classList.remove("armed"); }, 4000);
   };
+  const confirmed = button => button.classList.contains("armed") && Date.now() - button.dataset.armedAt > 400;
 
   // Zoraxy's iframe lacks allow-forms: the browser drops a form submission before any submit event fires, so a
   // click on a submit button and Enter in a text field are caught here and sent with fetch instead
@@ -167,6 +171,7 @@ const val APP_JS = """
   const send = async (form, button) => {
     if (busy) return;
     if (button?.dataset.confirm && !button.classList.contains("armed")) return arm(button);
+    if (button?.dataset.confirm && !confirmed(button)) return;
     busy = true;
     try {
       const action = button?.hasAttribute("formaction") ? button.formAction : form.action;
@@ -194,7 +199,8 @@ const val APP_JS = """
 
   document.addEventListener("keydown", event => {
     const field = event.target;
-    if (event.key !== "Enter" || event.repeat || field.tagName !== "INPUT" || !field.form) return;
+    // Only text fields submit on Enter, like a browser does it, never a checkbox
+    if (event.key !== "Enter" || event.repeat || field.tagName !== "INPUT" || field.type !== "text" || !field.form) return;
     event.preventDefault();
     send(field.form, field.form.querySelector('button[type="submit"]'));
   });

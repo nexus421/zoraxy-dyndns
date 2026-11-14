@@ -64,7 +64,9 @@ Everything a client sends is untrusted:
 Zoraxy forwards `/plugin.ui/<id>/` only after its login and checks its CSRF token (`gorilla/csrf`) on every POST
 before the plugin sees it. The page's script sends that token with every change, a forged form from another site
 fails at Zoraxy. Every change is validated with the same rules as loading `config.json`, an invalid one changes
-nothing. Each change is logged as one `UI:` line, without passwords. A form body is limited to 64 KiB.
+nothing. Each change is logged as one `UI:` line, without passwords. A form body is limited to 64 KiB. Zoraxy stops the
+plugin by calling `/term` directly on the plugin's port. The same path through the admin pages is refused, a GET
+there needs no CSRF token and any link an admin follows could otherwise stop the plugin.
 
 ## Files
 

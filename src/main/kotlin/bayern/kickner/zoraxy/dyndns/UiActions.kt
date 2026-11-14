@@ -5,8 +5,15 @@ import java.security.SecureRandom
 
 /**
  * What an action leaves for the page: the message, a new password to show once, form input to show again.
+ *
+ * @property zoraxy Zoraxy's access rules if the action asked for them, so the answer page needs no second question.
  */
-data class ActionResult(val notice: Notice, val secret: Secret? = null, val drafts: Drafts = Drafts())
+data class ActionResult(
+    val notice: Notice,
+    val secret: Secret? = null,
+    val drafts: Drafts = Drafts(),
+    val zoraxy: Result<Map<String, RuleSnapshot>>? = null,
+)
 
 /** 24 random bytes as hex, 48 characters: URL-safe for router settings and far beyond guessing. */
 fun newPassword(random: SecureRandom): String = ByteArray(24).also(random::nextBytes).toHexString()
@@ -50,7 +57,8 @@ class UiActions(
             "settings" -> ::saveSettings
             else -> return null
         }
-        return runCatching { run(Call(form, zoraxyRules)) }.getOrElse { ActionResult(Notice(false, it.message ?: "failed")) }
+        val call = Call(form, zoraxyRules)
+        return runCatching { run(call) }.getOrElse { ActionResult(Notice(false, it.message ?: "failed")) }.copy(zoraxy = call.askedOrNull())
     }
 
     /**
@@ -58,7 +66,11 @@ class UiActions(
      * are built before [change] takes the config lock, so the question to Zoraxy happens outside it.
      */
     private class Call(val form: Map<String, List<String>>, ask: () -> Result<Map<String, RuleSnapshot>>) {
-        val zoraxy: Result<Map<String, RuleSnapshot>> by lazy(ask)
+        private val asked = lazy(ask)
+        val zoraxy: Result<Map<String, RuleSnapshot>> by asked
+
+        /** Zoraxy's answer if this action asked, `null` if it never needed to. */
+        fun askedOrNull(): Result<Map<String, RuleSnapshot>>? = if (asked.isInitialized()) asked.value else null
 
         fun ruleName(id: String): String = zoraxy.getOrNull()?.get(id)?.name ?: id
 

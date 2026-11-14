@@ -1,10 +1,12 @@
 name: Build
 
-# Runs on every push and pull request, and as the build step of release.yml. Each architecture builds the native
+# Runs on every push to a branch and every pull request, and as the build step of release.yml. Each architecture builds the native
 # binary on its own runner, runs the unit tests and checks .introspect against the binary. amd64 also runs the
 # end-to-end test against a real Zoraxy. Both binaries are uploaded as artifacts under their release names.
 on:
+  # Branches only: a release tag is built by release.yml, which calls this workflow
   push:
+    branches: ['**']
   pull_request:
   workflow_call:
 

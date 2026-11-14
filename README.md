@@ -50,7 +50,8 @@ coming, new features only rarely. Issues and bug reports are welcome.
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
 (tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
-1. Install the plugin from Zoraxy's plugin store, or by hand as described in [Deployment](docs/deployment.md).
+1. Install the plugin by hand as described in [Deployment](docs/deployment.md). The listing in Zoraxy's plugin store
+   is on its way.
 2. Enable it and open its page in Zoraxy.
 3. Add a client, tick its access rules and copy the shown settings into the router.
 4. Set up the DynDNS host in Zoraxy, see [Deployment](docs/deployment.md#zoraxy-setup).

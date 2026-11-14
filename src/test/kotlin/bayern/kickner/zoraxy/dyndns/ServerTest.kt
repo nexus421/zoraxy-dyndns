@@ -22,9 +22,12 @@ class ServerTest {
     private val dir = Files.createTempDirectory("server-test").toFile()
     private val store = ConfigStore(File(dir, Config.FILE_NAME), config)
     private val reconciler = Reconciler(zoraxy.api, store::current, File(dir, State.FILE_NAME))
-    private val zoraxyRules = { runCatching { zoraxy.api.listAccessRules() } }
+    private var zoraxyCalls = 0
+    @Volatile
+    private var exits = 0
+    private val zoraxyRules = { zoraxyCalls++; runCatching { zoraxy.api.listAccessRules() } }
     private val port = freePort().also {
-        Server(it, store::current, reconciler, UiActions(store, reconciler, zoraxyRules), ActivityLog(), zoraxyRules).start()
+        Server(it, store::current, reconciler, UiActions(store, reconciler, zoraxyRules), ActivityLog(), zoraxyRules, exit = { exits++ }).start()
     }
 
     private val csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
@@ -196,4 +199,33 @@ class ServerTest {
 
     @Test
     fun pageIsGetOnly() = assertEquals(405, post("/ui/", "x=1").code)
+
+    @Test
+    fun termThroughZoraxysAdminProxyIsRefused() {
+        @Suppress("DEPRECATION")
+        val conn = URL("http://127.0.0.1:$port/ui//term").openConnection(Proxy.NO_PROXY) as HttpURLConnection
+        conn.setRequestProperty("X-Zoraxy-Csrf", "t0k3n")
+        assertEquals(403, conn.responseCode)
+        assertEquals(0, exits)
+        // Still running
+        assertEquals(200, get("/ui/", user = null).code)
+    }
+
+    @Test
+    fun anActionAsksZoraxyOnceIncludingTheAnswerPage() {
+        zoraxyCalls = 0
+        assertEquals(200, post("/ui/client/add", "name=router&rule=r1").code)
+        assertEquals(1, zoraxyCalls)
+    }
+
+    @Test
+    fun withoutAddressAndSourceTheAnswerSaysSo() =
+        assertEquals("badrequest no address parameter and no source address 400", update(""))
+
+    @Test
+    fun termFromZoraxyItselfStopsThePlugin() {
+        assertEquals(200, get("/ui//term", user = null).code)
+        Thread.sleep(200)
+        assertEquals(1, exits)
+    }
 }

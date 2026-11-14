@@ -23,6 +23,7 @@ import kotlin.system.exitProcess
  * @param port The port Zoraxy assigned in the configure spec.
  * @param config The current config, see [ConfigStore].
  * @param zoraxyRules Zoraxy's access rules for the page, a failure if Zoraxy cannot be asked.
+ * @param exit Ends the process after `/term`, replaced in tests so they cannot end the test JVM.
  */
 class Server(
     private val port: Int,
@@ -31,6 +32,7 @@ class Server(
     private val actions: UiActions,
     private val activity: ActivityLog,
     private val zoraxyRules: () -> Result<Map<String, RuleSnapshot>>,
+    private val exit: () -> Unit = { exitProcess(0) },
 ) {
 
     @Volatile
@@ -75,7 +77,7 @@ class Server(
         val query = parseForm(ex.requestURI.rawQuery).mapValues { it.value.last() }
         val addresses = addressesFromQuery(query).mapCatching { reported ->
             // dyndns2: without an address parameter the source address of the request is used
-            reported ?: listOf(Cidr.parse(sourceIp(ex) ?: "").getOrThrow())
+            reported ?: listOf(Cidr.parse(sourceIp(ex) ?: throw IllegalArgumentException("no address parameter and no source address")).getOrThrow())
         }.getOrElse {
             // Parameter names only: a misconfigured client may put its password into the query
             infoLog { "${client.name}: rejected update (parameters: ${query.keys.sorted().joinToString()}): ${it.message}" }
@@ -99,11 +101,21 @@ class Server(
             }
     }
 
-    /** Zoraxy stops a plugin by calling `<ui_path>/term` (then SIGTERM): answer, then exit through the shutdown hook. */
+    /**
+     * Zoraxy stops a plugin by calling `<ui_path>/term` directly on the plugin's port (then SIGTERM): answer, then exit
+     * through the shutdown hook. The same path through Zoraxy's admin proxy (`/plugin.ui/<id>/term`, recognizable by
+     * the `X-Zoraxy-Csrf` header the proxy adds) is refused: a GET there needs no CSRF token, so any link an admin
+     * follows could stop the plugin.
+     */
     private fun handleTerm(ex: HttpExchange) {
+        if (ex.requestHeaders.containsKey("X-Zoraxy-Csrf")) {
+            warnLog { "Refused /term through Zoraxy's admin pages, only Zoraxy itself may stop the plugin" }
+            runCatching { reply(ex, 403, "forbidden") }
+            return ex.close()
+        }
         runCatching { reply(ex, 200, "OK") }
         ex.close()
-        Thread { exitProcess(0) }.start()
+        Thread(exit).start()
     }
 
     private fun finish(ex: HttpExchange, client: Client, code: Int, body: String) {
@@ -149,7 +161,9 @@ class Server(
         if (body.size > MAX_FORM_BYTES) return reply(ex, 413, "form too large")
         val form = runCatching { parseForm(body.decodeToString()) }.getOrElse { emptyMap() }
         val result = actions.handle(action, form) ?: return reply(ex, 404, "not found")
-        val view = PageView(config(), reconciler.status(), zoraxyRules(), activity.entries(), csrf(ex), result.notice, result.secret, result.drafts)
+        // Reuse the action's answer from Zoraxy if it asked, one question per click is enough
+        val rules = result.zoraxy ?: zoraxyRules()
+        val view = PageView(config(), reconciler.status(), rules, activity.entries(), csrf(ex), result.notice, result.secret, result.drafts)
         page(ex, view)
     }
 

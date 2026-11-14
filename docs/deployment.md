@@ -5,7 +5,8 @@
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
 (tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
-From the plugin store: Plugins, App Store, DynDNS Whitelist. Zoraxy downloads the binary and the icon itself.
+From the plugin store, once it is listed there: Plugins, App Store, DynDNS Whitelist. Zoraxy downloads the binary
+and the icon itself.
 
 By hand: the binary must be named like its folder in Zoraxy's plugin directory.
 
