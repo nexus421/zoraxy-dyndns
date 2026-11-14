@@ -79,7 +79,7 @@ fun parseAccessRules(body: String): Map<String, RuleSnapshot> {
     val answer = zoraxyJson.parseToJsonElement(body)
     if (answer is JsonObject) error("Zoraxy: ${cleanText(answer["error"]?.jsonPrimitive?.content ?: body)}")
     return zoraxyJson.decodeFromJsonElement<List<AccessRule>>(answer).associate {
-        it.id to RuleSnapshot(it.id, it.whitelistEnabled, it.allowLocal, it.ips.orEmpty(), it.countries.orEmpty())
+        it.id to RuleSnapshot(it.id, it.name.ifBlank { it.id }, it.whitelistEnabled, it.allowLocal, it.ips.orEmpty(), it.countries.orEmpty())
     }
 }
 
@@ -87,6 +87,7 @@ fun parseAccessRules(body: String): Map<String, RuleSnapshot> {
 @Serializable
 private data class AccessRule(
     @SerialName("ID") val id: String,
+    @SerialName("Name") val name: String = "",
     @SerialName("WhitelistEnabled") val whitelistEnabled: Boolean = false,
     @SerialName("WhitelistAllowLocalAndLoopback") val allowLocal: Boolean = false,
     @SerialName("WhiteListIP") val ips: Map<String, String>? = null,

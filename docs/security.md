@@ -8,10 +8,14 @@ Anyone with a client password can whitelist their own IP. Keep a login on the pr
 
 ## Passwords
 
-`config.json` stores the SHA-256 of each password only, compared in constant time. That is enough because the
-passwords are random: `openssl rand -hex 24` gives 192 bits, and `-hash` refuses anything shorter than 16
-characters. Do not use a password you made up, a fast hash does not protect a guessable one. Hex is URL-safe, so
-it also works in the FRITZ!Box update URL.
+The plugin page generates every password from 24 random bytes (`SecureRandom`, 192 bits, hex) and shows it exactly
+once, in the answer to "Add client" or "New password". `config.json` stores only its SHA-256, compared in constant
+time. A fast hash is enough because the passwords are random, nobody can pick a guessable one. Hex is URL-safe for
+router settings. Passwords and hashes are never logged.
+
+"New password" replaces the password at once, but the address the client reported last stays whitelisted until
+the router reports again with the new password. That keeps a home network reachable that rarely changes its IP. If
+a password leaked, delete the client and add it again: that removes its addresses at once.
 
 A wrong user name costs the same hash as a wrong password, so the timing does not reveal valid names. Passwords
 never appear in the log: a rejected update logs only the names of its query parameters, because a misconfigured
@@ -49,20 +53,30 @@ Everything a client sends is untrusted:
 - At most one IPv4 and one IPv6 per update.
 - Every log line is stripped of control and formatting characters and cut at 1000 characters, in one place (the
   log format). Text from a request, from Zoraxy or from an exception can never break a line or forge another one.
-- The status page escapes every value and is sent with `Content-Security-Policy: default-src 'none'; style-src
-  'unsafe-inline'`. Every answer has `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+- The plugin page escapes every value (kotlinx.html) and is sent with `Content-Security-Policy: default-src 'none';
+  script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self';
+  frame-ancestors 'self'`: no inline script or style, only its own `app.js` and `app.css` and Zoraxy's icon, and only
+  Zoraxy itself may frame the page. Every answer has
+  `X-Content-Type-Options: nosniff` and `Cache-Control: no-store`.
+
+## Changes on the plugin page
+
+Zoraxy forwards `/plugin.ui/<id>/` only after its login and checks its CSRF token (`gorilla/csrf`) on every POST
+before the plugin sees it. The page's script sends that token with every change, a forged form from another site
+fails at Zoraxy. Every change is validated with the same rules as loading `config.json`, an invalid one changes
+nothing. Each change is logged as one `UI:` line, without passwords. A form body is limited to 64 KiB.
 
 ## Files
 
-`config.json` (template) and `state.json` are written owner only (`0600`), `state.json` atomically through a
-temporary file and a rename. Both are read strictly, an unknown key in `config.json` stops the plugin. A broken
+`config.json` and `state.json` are written owner only (`0600`), both atomically through a temporary file
+and a rename. Both are read strictly, an unknown key in `config.json` stops the plugin. A broken
 `state.json` is replaced by an empty state instead of stopping the plugin.
 
 ## Local access
 
 The plugin listens on `127.0.0.1` on a port Zoraxy assigns, like every Zoraxy plugin. Local users on the Zoraxy host
-can reach it directly: they can read the status page (client names and their addresses), stop the plugin through
-`/ui//term`, and send updates, which still need a client password. Zoraxy also passes the API key on the command
+can reach it directly: they can read and change the plugin page (it is Zoraxy that asks for the login, not the
+plugin), stop the plugin through `/ui//term`, and send updates, which still need a client password. Zoraxy also passes the API key on the command
 line (`-configure=<json>`), so it is visible in the process list. Run Zoraxy on a host without untrusted local
 users.
 

@@ -38,8 +38,8 @@ or `Introspect.kt`.
 ## Toolchain
 
 - Kotlin 2.4.21, Gradle 9.9.1. Toolchain Amazon Corretto 25, GraalVM CE 25 for `native-image`.
-- `bayern.kickner` libraries from `https://maven.kickner.bayern/releases`: Klogger 0.5.0. kotlinx.serialization
-  1.11.0 for every JSON.
+- `bayern.kickner` libraries from `https://maven.kickner.bayern/releases`: Klogger 0.5.0. kotlinx.html 0.12.0 for
+  the plugin page, kotlinx.serialization 1.11.0 for every JSON.
 - Only reflection-free dependencies, the native image has no reflection or resource config. Check a new dependency
   with a native build before adding it.
 - `BuildConfig` (`VERSION`, `BUILD_TIME`) is generated into `build/` on every build, never commit it. The introspect
@@ -61,7 +61,21 @@ Invariants, keep them when adding code:
   which strips control characters. Never log stack traces, they would lose their line breaks there.
 - The server handles requests one after another. Never add a delay to failed logins, Zoraxy's rate limit handles
   guessing.
-- Files the plugin writes are owner only.
+- Files the plugin writes are owner only (`writeOwnerOnly`).
+- Config changes go through `ConfigStore.update`, which validates before it writes. Passwords are generated
+  (`newPassword`), shown once in the answer page and stored only as SHA-256.
+
+Plugin page rules (Zoraxy loads it in an iframe with `sandbox="allow-scripts allow-same-origin"`):
+
+- HTML only through kotlinx.html in `Page.kt`, never raw HTML. No inline script, no `<style>`, no `style=`
+  attribute, the CSP in `Server.kt` forbids them. CSS and JS live as Kotlin strings in `Assets.kt`.
+- Without `allow-forms` the browser drops a form submission before any `submit` event fires: `app.js` catches
+  clicks on submit buttons and Enter in inputs and posts with `fetch`, the CSRF token from `<meta name="csrf-token">`
+  in `X-CSRF-Token`. Zoraxy checks that token before the plugin sees the POST.
+- Without `allow-modals` there is no `confirm()`: ask with `data-confirm` (second click).
+- Paths in the page are relative (Zoraxy serves it under `/plugin.ui/<id>/`), only the icon points to Zoraxy's
+  `/api/plugins/icon`.
+- Check page changes in the real Zoraxy iframe, light and dark, desktop and phone width.
 
 ## Code style
 
@@ -70,7 +84,7 @@ Same conventions as [Dirl](https://github.com/nexus421/Dirl) and
 `runCatching` by default, expected outcomes as `Result` and sealed types instead of exceptions, injectable `clock`,
 `staticLog` with `private const val TAG` in top-level code and receiver helpers (`infoLog { }`) in classes,
 timestamps through `timestampFormat` in `Common.kt`, KDoc on every public declaration. No em dashes, no en dashes
-and no semicolons in prose (README, KDoc, comments, log messages, the status page). Everything is English.
+and no semicolons in prose (README, KDoc, comments, log messages, the plugin page). Everything is English.
 
 Deliberate deviation from DemoAiProject: Kotlin's `Result` instead of KotNexLib's `ResultOf2`, KotNexLib would pull
 BouncyCastle into the native image.

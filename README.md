@@ -25,14 +25,19 @@ FRITZ!Box ──GET /nic/update?myip=…──▶ Zoraxy host "dyndns.example.co
 
 ## Features
 
+- Set up entirely in Zoraxy's plugin page: clients, passwords, access rules by name, modes, fixed entries, no
+  terminal and no restart
+- Passwords are generated for you and shown once, together with the ready FRITZ!Box settings
 - Any number of clients, each with its own password and one or more access rules
 - IPv4 and IPv6, including the LAN prefix of a FRITZ!Box (`myip=<ipaddr>,<ip6lanprefix>`)
-- Declarative: the whitelists follow `config.json` plus the last report of every client, at startup, after every
-  report and every 60 seconds
+- Declarative: the whitelists follow the configuration plus the last report of every client, at once after every
+  change, after every report and every 60 seconds
 - New addresses are added before old ones are removed, no lockout window
 - Entries you add by hand are never touched, removed clients and rules are cleaned up
 - Fixed entries per rule (emergency IP, VPN range, office), modes `enforce`, `warn` and `open_when_empty`
-- Status page in Zoraxy's plugin UI, warnings for settings that weaken a whitelist
+- Warnings for settings that weaken a whitelist, a wrong router password shows at the client, recent activity on the
+  page
+- Follows Zoraxy's light and dark mode
 - One native binary built with GraalVM, starts in milliseconds, needs nothing besides glibc
 
 ## Status
@@ -45,36 +50,15 @@ coming, new features only rarely. Issues and bug reports are welcome.
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
 (tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
-```bash
-mkdir -p /opt/zoraxy/plugins/zoraxy-dyndns
-```
-
-```bash
-curl -L -o /opt/zoraxy/plugins/zoraxy-dyndns/zoraxy-dyndns https://github.com/nexus421/zoraxy-dyndns/releases/latest/download/dyndns_linux_amd64
-```
-
-```bash
-chmod +x /opt/zoraxy/plugins/zoraxy-dyndns/zoraxy-dyndns
-```
-
-Restart Zoraxy and enable the plugin. It writes a `config.json` template next to the binary. Create a password and
-its hash:
-
-```bash
-openssl rand -hex 24
-```
-
-```bash
-/opt/zoraxy/plugins/zoraxy-dyndns/zoraxy-dyndns -hash
-```
-
-Fill in `config.json`, restart the plugin and check that the log shows `Config validated against N access rule(s)`.
-Then set up the DynDNS host in Zoraxy and the router, see [Deployment](docs/deployment.md) and [Usage](docs/usage.md).
+1. Install the plugin from Zoraxy's plugin store, or by hand as described in [Deployment](docs/deployment.md).
+2. Enable it and open its page in Zoraxy.
+3. Add a client, tick its access rules and copy the shown settings into the router.
+4. Set up the DynDNS host in Zoraxy, see [Deployment](docs/deployment.md#zoraxy-setup).
 
 ## Documentation
 
-- [Usage](docs/usage.md): clients like the FRITZ!Box, parameters, answers, status page
-- [Configuration](docs/configuration.md): `config.json`, modes, fixed entries, `state.json`
+- [Usage](docs/usage.md): the plugin page, clients like the FRITZ!Box, parameters, answers
+- [Configuration](docs/configuration.md): modes, fixed entries, owned entries, `config.json` and `state.json`
 - [Deployment](docs/deployment.md): installation, Zoraxy setup, TLS, updates
 - [Security](docs/security.md): passwords, what the plugin may touch, input validation, known limits
 - [Development](docs/development.md): build, tests, release, project layout, verification status

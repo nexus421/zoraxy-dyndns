@@ -9,7 +9,7 @@ class PlannerTest {
 
     private val home = "87.176.150.207/32"
     private fun snap(enabled: Boolean = true, local: Boolean = false, ips: Map<String, String> = emptyMap(), countries: Map<String, String> = emptyMap()) =
-        RuleSnapshot("r1", enabled, local, ips, countries)
+        RuleSnapshot("r1", "r1", enabled, local, ips, countries)
 
     // --- desiredEntries -----------------------------------------------------------------------------
 

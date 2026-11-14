@@ -10,8 +10,13 @@ import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.URLDecoder
 
-/** One access rule of [FakeZoraxy]. */
-class FakeRule(var enabled: Boolean = false, val allowLocal: Boolean = false, val ips: MutableMap<String, String> = linkedMapOf())
+/** One access rule of [FakeZoraxy]. [name] `null` leaves the `Name` field out, like a rule without a name. */
+class FakeRule(
+    var enabled: Boolean = false,
+    val allowLocal: Boolean = false,
+    val ips: MutableMap<String, String> = linkedMapOf(),
+    val name: String? = null,
+)
 
 /**
  * Zoraxy's plugin API in memory, on a free port of 127.0.0.1: the four endpoints of [Introspect] with the same
@@ -71,6 +76,7 @@ class FakeZoraxy(val rules: MutableMap<String, FakeRule>) {
         rules.forEach { (id, r) ->
             addJsonObject {
                 put("ID", id)
+                r.name?.let { put("Name", it) }
                 put("WhitelistEnabled", r.enabled)
                 put("WhitelistAllowLocalAndLoopback", r.allowLocal)
                 putJsonObject("WhiteListIP") { r.ips.forEach { (ip, comment) -> put(ip, comment) } }

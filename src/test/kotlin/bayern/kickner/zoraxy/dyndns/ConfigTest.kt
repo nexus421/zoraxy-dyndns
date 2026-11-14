@@ -2,7 +2,6 @@ package bayern.kickner.zoraxy.dyndns
 
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.attribute.PosixFilePermissions
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -92,11 +91,57 @@ class ConfigTest {
     }
 
     @Test
-    fun missingFileWritesAnOwnerOnlyTemplateThatDoesNotParse() {
+    fun missingFileGivesEmptyConfigAndWritesNothing() {
         val file = File(Files.createTempDirectory("config-test").toFile(), Config.FILE_NAME)
         assertEquals(emptyList(), Config.load(file).getOrThrow().clients)
-        assertEquals("rw-------", PosixFilePermissions.toString(Files.getPosixFilePermissions(file.toPath())))
-        // An unedited template must stop the plugin, not run it with placeholder rules
-        assertTrue(Config.load(file).isFailure)
+        assertTrue(file.exists().not())
+    }
+
+    @Test
+    fun dyndnsHostIsOptionalAndValidated() {
+        assertEquals(null, parsed("""{ "clients": [] }""").dyndnsHost)
+        assertEquals("dyndns.example.com:8443", parsed("""{ "clients": [], "dyndns_host": "dyndns.example.com:8443" }""").dyndnsHost)
+        listOf("https://x.example", "x.example/path", "a b", "").forEach { rejected("""{ "clients": [], "dyndns_host": "$it" }""") }
+    }
+
+    @Test
+    fun toJsonRoundTrips() {
+        val c = Config(
+            listOf(Client("fritz", hash, listOf("r1", "r2")), Client("office", "b".repeat(64), listOf("r1"))),
+            mapOf("r2" to RuleConfig(Mode.OPEN_WHEN_EMPTY, listOf(Cidr.parseStatic("10.8.0.0/24").getOrThrow()))),
+            dyndnsHost = "dyndns.example.com",
+        )
+        assertEquals(c, parsed(c.toJson()))
+    }
+
+    @Test
+    fun toJsonLeavesOutAMissingHost() = assertTrue("dyndns_host" !in Config(emptyList(), emptyMap()).toJson())
+
+    @Test
+    fun unfinishedTemplateOfVersion01StartsEmpty() {
+        val file = File(Files.createTempDirectory("config-test").toFile(), Config.FILE_NAME)
+        file.writeText(
+            """
+            {
+              "clients": [
+                {
+                  "name": "fritzbox",
+                  "password_sha256": "<output of: ./zoraxy-dyndns -hash>",
+                  "rules": ["<access rule id from Zoraxy>"]
+                }
+              ],
+              "rules": {
+                "<access rule id from Zoraxy>": { "mode": "enforce", "static": [] }
+              }
+            }
+            """.trimIndent() + "\n"
+        )
+        assertEquals(Config(emptyList(), emptyMap()), Config.load(file).getOrThrow())
+    }
+
+    @Test
+    fun dyndnsHostPortMustBeAPort() {
+        assertEquals("d.example:65535", parsed("""{ "clients": [], "dyndns_host": "d.example:65535" }""").dyndnsHost)
+        listOf("d.example:99999", "d.example:0").forEach { rejected("""{ "clients": [], "dyndns_host": "$it" }""") }
     }
 }

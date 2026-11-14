@@ -44,9 +44,10 @@ start_zoraxy() {
   echo "Zoraxy did not start"; exit 1
 }
 restart_plugin() { admin /api/plugins/disable -d plugin_id=$ID >/dev/null; sleep 1; admin /api/plugins/enable -d plugin_id=$ID >/dev/null; sleep 4; }
-write_config() { # json
-  echo "$1" > "$PDIR/config.json"
-}
+# A POST to the plugin page through Zoraxy, with Zoraxy's login cookie and CSRF token, like the page's app.js
+ui() { admin "/plugin.ui/$ID/$1" -X POST "${@:2}"; }
+# The password from the page an action returns (shown once)
+secret_of() { grep -oP 'id="secret-password">\K[0-9a-f]{48}'; }
 
 # --- setup ---------------------------------------------------------------------------------------
 cp "$ZORAXY_BIN" "$WORK/zoraxy"; mkdir -p "$PDIR" "$WORK/backend"
@@ -70,17 +71,30 @@ admin /api/plugins/groups/add -d tag=dyndns -d plugin_id=$ID >/dev/null
 # Worst case for plain HTTP: the DynDNS host allows it (bypassGlobalTLS, set above). Zoraxy then still
 # routes it past all plugins (handleNonTLSRequest), so the whitelist must stay untouched (T37).
 restart_plugin
-check "T02 first start writes a config template" "yes" "$([[ -f $PDIR/config.json ]] && echo yes || echo no)"
+check "T02 first start runs without config.json" "no" "$([[ -f $PDIR/config.json ]] && echo yes || echo no)"
 
-PW=$(openssl rand -hex 24); PW2=$(openssl rand -hex 24); PW3=$(openssl rand -hex 24)
-H=$(echo "$PW" | "$PLUGIN_BIN" -hash); H2=$(echo "$PW2" | "$PLUGIN_BIN" -hash); H3=$(echo "$PW3" | "$PLUGIN_BIN" -hash)
-CLIENT_FRITZ="{ \"name\": \"fritzbox\", \"password_sha256\": \"$H\", \"rules\": [\"$RID\", \"$RID3\"] }"
-CLIENT_R2="{ \"name\": \"router2\", \"password_sha256\": \"$H2\", \"rules\": [\"does-not-exist\"] }"
-CLIENT_GONE="{ \"name\": \"gone\", \"password_sha256\": \"$H3\", \"rules\": [\"$RID\"] }"
-RULES="\"$RID2\": { \"mode\": \"warn\" }, \"$RID3\": { \"mode\": \"open_when_empty\" },
-       \"$RID4\": { \"mode\": \"open_when_empty\", \"static\": [\"10.8.0.0/24\"] }"
-write_config "{ \"clients\": [ $CLIENT_FRITZ, $CLIENT_R2, $CLIENT_GONE ], \"rules\": { $RULES } }"
-restart_plugin
+# --- setup through the plugin page ------------------------------------------------------------------
+o=$(curl "${C[@]}" -b "$WORK/jar" -o /dev/null -w '%{http_code}' -X POST -d name=evil -d rule="$RID" "http://127.0.0.1:18000/plugin.ui/$ID/client/add")
+check "T51 a POST without Zoraxy's CSRF token is rejected" "403 no" "$o $([[ -f $PDIR/config.json ]] && echo yes || echo no)"
+PW=$(ui client/add -d name=fritzbox -d rule="$RID" -d rule="$RID3" | secret_of)
+PW3=$(ui client/add -d name=gone -d rule="$RID" | secret_of)
+check "T55 the page returns a 48 character password" "48 48" "${#PW} ${#PW3}"
+ui rule/add -d id="$RID2" >/dev/null; ui rule/save -d id="$RID2" -d mode=warn -d static= >/dev/null
+ui rule/save -d id="$RID3" -d mode=open_when_empty -d static= >/dev/null
+ui rule/add -d id="$RID4" >/dev/null; ui rule/save -d id="$RID4" -d mode=open_when_empty --data-urlencode static=10.8.0.0/24 >/dev/null
+check "T54 config.json is owner only" "600" "$(stat -c %a "$PDIR/config.json")"
+# router2 points to a rule Zoraxy does not have. The page refuses that, so it goes into the file by hand,
+# which also proves that a config edited by hand still loads
+PW2=$(openssl rand -hex 24)
+admin /api/plugins/disable -d plugin_id=$ID >/dev/null; sleep 1
+python3 - "$PDIR/config.json" "$(printf %s "$PW2" | sha256sum | cut -d' ' -f1)" <<'PY'
+import json, sys
+path, digest = sys.argv[1], sys.argv[2]
+config = json.load(open(path))
+config["clients"].append({"name": "router2", "password_sha256": digest, "rules": ["does-not-exist"]})
+json.dump(config, open(path, "w"))
+PY
+admin /api/plugins/enable -d plugin_id=$ID >/dev/null; sleep 4
 contains "T03 config validated at startup" "Config validated against" "$(plugin_log)"
 contains "T04 unknown rule id is reported" "references unknown access rule 'does-not-exist'" "$(plugin_log)"
 
@@ -99,6 +113,7 @@ check "T06 no credentials" "badauth 401" "$(curl "${C[@]}" "${R[@]}" -w ' %{http
 contains "T07 401 carries a Basic challenge" "www-authenticate: basic" "$(curl "${C[@]}" "${R[@]}" -D - -o /dev/null 'https://dyndns.test:18080/nic/update' | tr 'A-Z' 'a-z')"
 check "T08 wrong password" "badauth 401" "$(upd fritzbox:wrong '?myip=87.176.150.207')"
 check "T09 unknown user" "badauth 401" "$(upd "mallory:$PW" '?myip=87.176.150.207')"
+contains "T52 a wrong password of a known client shows on the page" "badauth" "$(admin /plugin.ui/$ID/)"
 check "T10 whitelist still empty" "" "$(wl)"
 o=$(curl "${C[@]}" "${R[@]}" -w ' %{http_code}' "http://fritzbox:$PW@dyndns.test/nic/update?myip=87.176.150.207")
 check "T37 plain HTTP never reaches the plugin (Zoraxy bypasses plugins without TLS)" "no" "$([[ $o == good* ]] && echo yes || echo no)"
@@ -159,12 +174,15 @@ check "T42 enforce re-enables the whitelist within one cycle" "true" "$(enabled 
 check "T44a client 'gone' reports" "good 5.5.5.5 200" "$(upd "gone:$PW3" '?myip=5.5.5.5')"
 contains "T44b its entry is present" "5.5.5.5/32=dyndns:gone" "$(wl)"
 admin /api/whitelist/ip/add -d id="$RID3" -d ip=2.2.2.2 -d comment=manual3 >/dev/null
-CLIENT_FRITZ_R1="{ \"name\": \"fritzbox\", \"password_sha256\": \"$H\", \"rules\": [\"$RID\"] }"
-write_config "{ \"clients\": [ $CLIENT_FRITZ_R1, $CLIENT_R2 ], \"rules\": { \"$RID2\": { \"mode\": \"warn\" }, \"$RID4\": { \"mode\": \"open_when_empty\", \"static\": [\"10.8.0.0/24\"] } } }"
-restart_plugin
-check "T44 removed client's entry disappears" "no" "$(wl | grep -q 'dyndns:gone' && echo yes || echo no)"
-check "T45 rule removed from config: owned entries removed, manual kept" "2.2.2.2=manual3" "$(wl "$RID3")"
-check "T45b rule removed from config: switch untouched" "true" "$(enabled "$RID3")"
+ui client/delete -d name=gone >/dev/null
+ui client/rules -d name=fritzbox -d rule="$RID" >/dev/null
+ui rule/release -d id="$RID3" >/dev/null
+check "T44 client deleted on the page: its entry disappears at once" "no" "$(wl | grep -q 'dyndns:gone' && echo yes || echo no)"
+check "T45 rule released on the page: owned entries removed, manual kept" "2.2.2.2=manual3" "$(wl "$RID3")"
+check "T45b rule released on the page: switch untouched" "true" "$(enabled "$RID3")"
+PAGE=$(admin /plugin.ui/$ID/)
+contains "T53a the page has the activity card" "Recent activity" "$PAGE"
+contains "T53b activity shows changes made on the page" "UI: client gone deleted" "$PAGE"
 
 # --- restart ---------------------------------------------------------------------------------------
 BEFORE=$(wl); kill $ZPID; wait $ZPID 2>/dev/null; start_zoraxy; sleep 5

@@ -36,9 +36,11 @@ sudo test/e2e.sh <zoraxy-binary> build/zoraxy-dyndns
 ```
 
 [e2e.sh](../test/e2e.sh) sets up a real Zoraxy from scratch in a temporary directory (access rules, hosts, tag
-group, plugin) and runs 73 checks against it: authentication, the update cycle, input validation, dual stack and
-parameter aliases, the three modes, fixed entries, the reconcile loop, config changes and cleanup, restarts, the
-status page, `/term` and that no password ends up in a log or file. It needs curl, python3, openssl and root for
+group, plugin) and configures the plugin through its page, with Zoraxy's login cookie and CSRF token, as a browser
+would. It runs 79 checks: a POST without CSRF token is rejected, clients and rules created on the page,
+authentication, the update cycle, input validation, dual stack and parameter aliases, the three modes, fixed entries,
+the reconcile loop, deleting clients and releasing rules on the page, a config edited by hand, restarts, the page
+with its activity card, `/term`, owner only files and that no password ends up in a log or file. It needs curl, python3, openssl and root for
 port 80 (the plain HTTP case), and takes about three minutes because it waits for one reconcile cycle.
 
 ## CI and release
@@ -77,17 +79,22 @@ One package `bayern.kickner.zoraxy.dyndns`:
 
 | File            | Content                                                                         |
 |-----------------|---------------------------------------------------------------------------------|
-| `Main.kt`       | Arguments, logging, wiring, reconcile loop, `-hash`                             |
-| `Common.kt`     | Timestamps, JSON settings, SHA-256, log-safe text, file permissions             |
+| `Main.kt`       | Arguments, logging, wiring, reconcile loop                                      |
+| `Common.kt`     | Timestamps, JSON settings, SHA-256, log lines, owner only atomic writes         |
 | `Introspect.kt` | The self-description for Zoraxy and the plugin store                            |
-| `Config.kt`     | `config.json` model, strict parsing, validation, template                       |
+| `Config.kt`     | `config.json` model, strict parsing, validation, JSON for writing               |
+| `ConfigStore.kt`| The current config, validated and written on every change                       |
+| `UiActions.kt`  | The changes of the plugin page: clients, passwords, rules, DynDNS host          |
+| `Page.kt`       | The plugin page, rendered with kotlinx.html                                     |
+| `Assets.kt`     | `app.css` and `app.js` as Kotlin strings, so the native image needs no resources |
+| `ActivityLog.kt`| The last 100 log lines for the page, fed by Klogger                             |
 | `State.kt`      | `state.json`: last report per client, managed rules, atomic write               |
 | `Cidr.kt`       | IP and prefix parsing, public address check, canonical form                     |
 | `Params.kt`     | dyndns2 query parameters and their aliases                                      |
 | `Planner.kt`    | Pure planning: desired entries, what to add, remove and switch per rule         |
 | `Reconciler.kt` | Applies the plans through the API, cleanup, status for the page                 |
 | `ZoraxyApi.kt`  | Client for Zoraxy's plugin API                                                  |
-| `Server.kt`     | Local HTTP server: dyndns2 endpoint, Basic Auth, status page, `/term`           |
+| `Server.kt`     | Local HTTP server: dyndns2 endpoint, Basic Auth, plugin page and actions, `/term` |
 
 Conventions follow [Dirl](https://github.com/nexus421/Dirl) and
 [DemoAiProject](https://github.com/nexus421/DemoAiProject): `.not()` instead of `!`, `runCatching` by default,
@@ -99,14 +106,18 @@ or semicolons in prose. Deliberate deviation: expected outcomes are Kotlin's `Re
 
 Verified:
 
-- 90 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
-  aliases, config parsing (strict keys, modes, fixed entries, names, hashes, the owner only template), `state.json`
-  (round trip, owner only, broken files, single invalid entries), every planner case of the three modes, parsing of
-  Zoraxy's access list, log lines and the introspect payload. The reconciler and the HTTP server run against
-  [FakeZoraxy](../src/test/kotlin/bayern/kickner/zoraxy/dyndns/FakeZoraxy.kt), an in-memory plugin API: add before
-  remove, cleanup of removed clients and rules, unknown rules, the status after a failed update, every dyndns2
-  answer, the source address fallback, escaping and headers of the status page.
-- The end-to-end test against Zoraxy 3.3.5 (`v3.3.5-rc5`), all 73 checks, locally with the JAR on the JVM inside
-  a sandbox without network.
+- 151 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
+  aliases, config parsing and validation (strict keys, modes, fixed entries, names, hashes, the DynDNS host),
+  writing `config.json` (round trip, owner only, an invalid change writes nothing), `state.json` (round trip, owner
+  only, broken files, single invalid entries), every planner case of the three modes, parsing of Zoraxy's access
+  list, log lines, the activity log and the introspect payload. Every action of the plugin page (valid, invalid,
+  stale, unknown rules, Zoraxy unreachable, a failed reconcile after saving), the page itself (escaping, no inline
+  script or style, the password shown once, the placeholder host) and the HTTP server run against
+  [FakeZoraxy](../src/test/kotlin/bayern/kickner/zoraxy/dyndns/FakeZoraxy.kt), an in-memory plugin API.
+- The end-to-end test against Zoraxy 3.3.5 (`v3.3.5-rc5`), all 79 checks, locally with the JAR on the JVM inside a
+  sandbox without network.
+- The plugin page clicked through in the real Zoraxy iframe: adding a client, the router settings, Copy without
+  HTTPS, Enter in a field, an invalid fixed entry, deleting with the second click, light and dark mode following
+  Zoraxy's switch live, phone width, no CSP violation in the console.
 
-Not verified locally: the native image itself, it is built and tested in CI.
+The native image is built and tested in CI, not locally.

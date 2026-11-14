@@ -12,8 +12,15 @@ import java.io.File
  */
 data class RuleStatus(val mode: Mode, val enabled: Boolean?, val entries: Int, val problems: List<String>)
 
+/**
+ * The last dyndns2 answer to a client.
+ *
+ * @property at Unix milliseconds of the answer.
+ */
+data class ClientResult(val text: String, val at: Long)
+
 /** Everything the status page shows, taken at one moment. */
-data class Status(val clients: Map<String, ClientState>, val results: Map<String, String>, val rules: Map<String, RuleStatus>)
+data class Status(val clients: Map<String, ClientState>, val results: Map<String, ClientResult>, val rules: Map<String, RuleStatus>)
 
 /**
  * Result of one reconcile run.
@@ -31,17 +38,18 @@ data class ReconcileResult(val changed: Boolean, val failedRules: Set<String>, v
  * before (state.json `managed_rules`), are ever touched. All public functions are synchronized, reports and the
  * periodic run never interleave.
  *
+ * @param config The current config, read once at the start of every run. The UI changes it while the plugin runs.
  * @param clock Unix milliseconds, injectable for tests.
  */
 class Reconciler(
     private val api: ZoraxyApi,
-    private val config: Config,
+    private val config: () -> Config,
     private val stateFile: File,
     private val clock: () -> Long = System::currentTimeMillis,
 ) {
     private var state = State.load(stateFile)
     private val ruleStatus = linkedMapOf<String, RuleStatus>()
-    private val clientResults = mutableMapOf<String, String>()
+    private val clientResults = mutableMapOf<String, ClientResult>()
     private val loggedProblems = mutableMapOf<String, List<String>>()
 
     /**
@@ -61,7 +69,7 @@ class Reconciler(
     /** Remembers the last dyndns2 answer to [client] for the status page. */
     @Synchronized
     fun recordResult(client: String, result: String) {
-        clientResults[client] = result
+        clientResults[client] = ClientResult(result, clock())
     }
 
     /**
@@ -73,6 +81,7 @@ class Reconciler(
      */
     @Synchronized
     fun reconcile(onlyRules: Set<String>? = null): ReconcileResult {
+        val config = config()
         val snapshots = api.listAccessRules()
         val configured = config.ruleIds()
         val desired = desiredEntries(config, state)
@@ -109,7 +118,7 @@ class Reconciler(
                 },
             )
             logProblems(ruleId, problems)
-            // The status page shows configured rules only, the config does not change while the plugin runs
+            // The status page shows configured rules only
             if (isConfigured.not()) continue
             // After a failure the state in Zoraxy is unknown, the snapshot is the last one known
             ruleStatus[ruleId] = if (applied.isSuccess) {
@@ -119,6 +128,9 @@ class Reconciler(
         }
 
         if (onlyRules == null) {
+            // Rules released through the UI leave the status page and the problem log
+            ruleStatus.keys.retainAll(configured)
+            loggedProblems.keys.retainAll(stillManaged)
             // Forget clients that are gone from the config, their entries were removed above
             val names = config.clients.map { it.name }.toSet()
             val newState = State(state.clients.filterKeys { it in names }, stillManaged)
@@ -126,6 +138,10 @@ class Reconciler(
                 state = newState
                 save()
             }
+        } else if ((candidates.toSet() - state.managedRules).isNotEmpty()) {
+            // A report can come before any full run succeeded: remember its rules, so a later removal cleans them up
+            state = state.copy(managedRules = state.managedRules + candidates)
+            save()
         }
         return ReconcileResult(changed, failed, snapshots.size)
     }

@@ -15,11 +15,23 @@ import kotlin.system.exitProcess
  * Speaks the dyndns2 protocol, so any client that supports it works (FRITZ!Box, ddclient, inadyn, OPNsense):
  * `GET /nic/update?myip=<ipv4>[,<ipv6 or ipv6 prefix>]` with Basic Auth.
  *
+ * Under `/ui/` it serves the status and settings page, its stylesheet and script, and the POST actions of
+ * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check.
+ *
  * It runs on the single dispatcher thread of the JDK server, requests are handled one after another.
  *
  * @param port The port Zoraxy assigned in the configure spec.
+ * @param config The current config, see [ConfigStore].
+ * @param zoraxyRules Zoraxy's access rules for the page, a failure if Zoraxy cannot be asked.
  */
-class Server(private val port: Int, private val config: Config, private val reconciler: Reconciler) {
+class Server(
+    private val port: Int,
+    private val config: () -> Config,
+    private val reconciler: Reconciler,
+    private val actions: UiActions,
+    private val activity: ActivityLog,
+    private val zoraxyRules: () -> Result<Map<String, RuleSnapshot>>,
+) {
 
     @Volatile
     private var warnedPlainHttp = false
@@ -34,7 +46,7 @@ class Server(private val port: Int, private val config: Config, private val reco
         }
         server.createContext("/") { ex -> safely(ex) { reply(ex, 404, "not found") } }
         server.start()
-        infoLog { "Listening on 127.0.0.1:$port with ${config.clients.size} client(s)" }
+        infoLog { "Listening on 127.0.0.1:$port with ${config().clients.size} client(s)" }
     }
 
     private fun handleUpdate(ex: HttpExchange) {
@@ -60,7 +72,7 @@ class Server(private val port: Int, private val config: Config, private val reco
             return reply(ex, 401, "badauth")
         }
 
-        val query = parseQuery(ex.requestURI.rawQuery)
+        val query = parseForm(ex.requestURI.rawQuery).mapValues { it.value.last() }
         val addresses = addressesFromQuery(query).mapCatching { reported ->
             // dyndns2: without an address parameter the source address of the request is used
             reported ?: listOf(Cidr.parse(sourceIp(ex) ?: "").getOrThrow())
@@ -107,9 +119,10 @@ class Server(private val port: Int, private val config: Config, private val reco
         val decoded = runCatching { String(Base64.getDecoder().decode(header.substring(6).trim())) }.getOrNull() ?: return null
         val name = decoded.substringBefore(':')
         val password = decoded.substringAfter(':', "")
-        val client = config.clients.firstOrNull { it.name == name }
+        val client = config().clients.firstOrNull { it.name == name }
         // Always hash once, so a wrong name costs the same as a wrong password
         val ok = client?.checkPassword(password) ?: run { sha256Hex(password); false }
+        if (ok.not() && client != null) reconciler.recordResult(client.name, "badauth")
         if (ok.not()) infoLog { "Authentication failed for client '${name.take(64)}' from ${sourceIp(ex)?.take(64)}" }
         return if (ok) client else null
     }
@@ -119,41 +132,40 @@ class Server(private val port: Int, private val config: Config, private val reco
         ex.requestHeaders.getFirst("X-Forwarded-For")?.split(',')?.lastOrNull()?.trim()?.ifEmpty { null }
 
     private fun handleUi(ex: HttpExchange) {
-        val status = reconciler.status()
-        val clientRows = config.clients.joinToString("") { c ->
-            val s = status.clients[c.name]
-            row(
-                c.name, s?.addresses?.joinToString(", ") { it.display } ?: "none",
-                s?.let { formatTimestamp(it.updatedAt) } ?: "never", status.results[c.name] ?: "none", c.rules.joinToString(", "),
-            )
+        val path = ex.requestURI.path.removePrefix(Introspect.UI_PATH).trim('/')
+        val get = ex.requestMethod == "GET"
+        when {
+            path.isEmpty() && get -> page(ex, PageView(config(), reconciler.status(), zoraxyRules(), activity.entries(), csrf(ex)))
+            path == "app.css" && get -> asset(ex, "text/css; charset=utf-8", APP_CSS)
+            path == "app.js" && get -> asset(ex, "text/javascript; charset=utf-8", APP_JS)
+            path in UiActions.ACTIONS && ex.requestMethod == "POST" -> handleAction(ex, path)
+            path.isEmpty() || path == "app.css" || path == "app.js" || path in UiActions.ACTIONS -> reply(ex, 405, "method not allowed")
+            else -> reply(ex, 404, "not found")
         }
-        val ruleRows = status.rules.entries.joinToString("") { (id, r) ->
-            val switch = when (r.enabled) {
-                true -> "on"
-                false -> "OFF"
-                null -> "unknown"
-            }
-            row(id, r.mode.json, switch, r.entries.toString(), r.problems.joinToString(" | ").ifEmpty { "none" })
-        }
-        val html = """
-            <!DOCTYPE html><html><head><meta charset="utf-8"><title>DynDNS Whitelist</title>
-            <style>body{font-family:sans-serif;margin:1.5rem}table{border-collapse:collapse;margin-bottom:1.5rem}td,th{padding:.3rem .8rem;text-align:left;border-bottom:1px solid #ddd;vertical-align:top}</style>
-            </head><body><h2>DynDNS Whitelist</h2>
-            <h3>Clients</h3>
-            <table><tr><th>Client</th><th>Last addresses</th><th>Last update</th><th>Last result</th><th>Rules</th></tr>$clientRows</table>
-            <h3>Access rules</h3>
-            <table><tr><th>Rule</th><th>Mode</th><th>Whitelist</th><th>Entries</th><th>Warnings</th></tr>$ruleRows</table>
-            <p>Update URL: <code>https://&lt;client&gt;:&lt;password&gt;@&lt;host&gt;${Introspect.CAPTURE_PATH}?myip=&lt;ipaddr&gt;</code></p>
-            </body></html>
-        """.trimIndent()
-        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
-        // No scripts, no external resources, only the inline style above
-        ex.responseHeaders.add("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
-        reply(ex, 200, html)
     }
 
-    /** One table row, every cell escaped. */
-    private fun row(vararg cells: String) = cells.joinToString("", "<tr>", "</tr>") { "<td>${esc(it)}</td>" }
+    private fun handleAction(ex: HttpExchange, action: String) {
+        val body = ex.requestBody.readNBytes(MAX_FORM_BYTES + 1)
+        if (body.size > MAX_FORM_BYTES) return reply(ex, 413, "form too large")
+        val form = runCatching { parseForm(body.decodeToString()) }.getOrElse { emptyMap() }
+        val result = actions.handle(action, form) ?: return reply(ex, 404, "not found")
+        val view = PageView(config(), reconciler.status(), zoraxyRules(), activity.entries(), csrf(ex), result.notice, result.secret, result.drafts)
+        page(ex, view)
+    }
+
+    /** Zoraxy's CSRF token, which it adds to every request it forwards to the plugin UI. */
+    private fun csrf(ex: HttpExchange): String = ex.requestHeaders.getFirst("X-Zoraxy-Csrf").orEmpty()
+
+    private fun page(ex: HttpExchange, view: PageView) {
+        ex.responseHeaders.add("Content-Type", "text/html; charset=utf-8")
+        ex.responseHeaders.add("Content-Security-Policy", PAGE_CSP)
+        reply(ex, 200, renderPage(view))
+    }
+
+    private fun asset(ex: HttpExchange, type: String, content: String) {
+        ex.responseHeaders.add("Content-Type", type)
+        reply(ex, 200, content)
+    }
 
     /** Answers a failure with 500 `911` instead of dropping the connection, and always closes the exchange. */
     private fun safely(ex: HttpExchange, block: () -> Unit) {
@@ -173,13 +185,22 @@ class Server(private val port: Int, private val config: Config, private val reco
         ex.responseBody.use { it.write(bytes) }
     }
 
-    /**
-     * The decoded query, the last value wins for a repeated name. The JDK server already answers 400 to a request
-     * whose URI has invalid percent-encoding, so decoding cannot fail here.
-     */
-    private fun parseQuery(raw: String?): Map<String, String> = raw.orEmpty().split('&').filter(String::isNotEmpty).associate {
-        URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(it.substringAfter('=', ""), Charsets.UTF_8)
-    }
-
-    private fun esc(s: String) = s.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\"", "&quot;")
 }
+
+/** Largest form body an action accepts. Every real form is far below. */
+private const val MAX_FORM_BYTES = 64 * 1024
+
+/**
+ * The page loads nothing but its own stylesheet, its own script and Zoraxy's icon, no inline code. Only Zoraxy's own
+ * origin may frame it, so no other site can lay the delete buttons under its own page.
+ */
+private const val PAGE_CSP =
+    "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
+
+/**
+ * Decodes `application/x-www-form-urlencoded` text (a query or a form body). A name may repeat, like the rule
+ * checkboxes, so every name maps to all its values in order. The JDK server already rejects a URI with broken
+ * percent-encoding, a broken body reads as empty and the action reports the missing field.
+ */
+internal fun parseForm(raw: String?): Map<String, List<String>> = raw.orEmpty().split('&').filter(String::isNotEmpty)
+    .groupBy({ URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) }, { URLDecoder.decode(it.substringAfter('=', ""), Charsets.UTF_8) })

@@ -20,30 +20,28 @@ private const val STARTUP_ATTEMPTS = 30
 /** Failed runs in a row are logged once every this many, so an outage does not flood the log. */
 private const val LOG_EVERY_NTH_FAILURE = 30
 
-/** Shortest password `-hash` accepts. `openssl rand -hex 24` gives 48 characters. */
-private const val MIN_PASSWORD_LENGTH = 16
-
 /**
  * Entry point.
  *
  * - `-configure=<json>` is how Zoraxy starts the plugin, with the port to listen on and the API key.
  * - `-introspect` prints the self-description for Zoraxy, see [Introspect].
- * - `-hash` reads a password from stdin and prints its SHA-256 for config.json.
  */
 fun main(args: Array<String>) {
     if (args.firstOrNull() == "-introspect") return println(Introspect.json())
-    configureLogging()
-    if (args.firstOrNull() == "-hash") return hashPassword()
+    val activity = ActivityLog()
+    configureLogging(activity)
 
     val spec = args.firstOrNull { it.startsWith("-configure=") }
         ?.let { runCatching { zoraxyJson.decodeFromString<ConfigureSpec>(it.removePrefix("-configure=")) }.getOrNull() }
-        ?: fail("Zoraxy starts this plugin with -configure=<json>. Tools: -introspect, -hash")
+        ?: fail("Zoraxy starts this plugin with -configure=<json>. Tool: -introspect")
     if (spec.apiKey.isEmpty()) fail("No API key from Zoraxy, are permitted_api_endpoints set?")
 
     staticLog(KLogger.Level.INFO, TAG) { "zoraxy-dyndns $appVersion" }
-    val config = Config.load().getOrElse { fail("Invalid ${Config.FILE_NAME}: ${it.message}") }
-    val reconciler = Reconciler(ZoraxyApi(spec.zoraxyPort, spec.apiKey), config, File(State.FILE_NAME))
-    Server(spec.port, config, reconciler).start()
+    val store = ConfigStore(File(Config.FILE_NAME), Config.load().getOrElse { fail("Invalid ${Config.FILE_NAME}: ${it.message}") })
+    val api = ZoraxyApi(spec.zoraxyPort, spec.apiKey)
+    val zoraxyRules = { runCatching { api.listAccessRules() } }
+    val reconciler = Reconciler(api, store::current, File(State.FILE_NAME))
+    Server(spec.port, store::current, reconciler, UiActions(store, reconciler, zoraxyRules), activity, zoraxyRules).start()
     // Runs on /term, on SIGTERM (Zoraxy sends it after /term) and on a normal exit
     Runtime.getRuntime().addShutdownHook(Thread {
         staticLog(KLogger.Level.INFO, TAG) { "Shutting down" }
@@ -67,12 +65,13 @@ private data class ConfigureSpec(
 )
 
 /**
- * Console only: Zoraxy shows every line the plugin prints in its own log, with its own timestamp. Every line goes
- * through [logLine]. Secrets (passwords, the API key) are never logged.
+ * The console, which Zoraxy shows in its own log with its own timestamp, and [activity] for the status page. Every
+ * line goes through [logLine]. Secrets (passwords, the API key) are never logged.
  */
-private fun configureLogging() {
+private fun configureLogging(activity: ActivityLog) {
     KLogger.configure {
         logToConsole()
+        logToCustom(KLogger.Level.INFO, activity::add)
         minLevel = KLogger.Level.INFO
         format(::logLine)
     }
@@ -109,14 +108,6 @@ private fun startReconcileLoop(reconciler: Reconciler) {
         }
         scheduler.scheduleWithFixedDelay(run, RECONCILE_SECONDS, RECONCILE_SECONDS, TimeUnit.SECONDS)
     }
-}
-
-/** Reads a password from the terminal or stdin and prints its SHA-256 for config.json. */
-private fun hashPassword() {
-    val password = System.console()?.readPassword("Password: ")?.let(::String) ?: readlnOrNull().orEmpty()
-    val tooShort = password.length < MIN_PASSWORD_LENGTH
-    if (tooShort) fail("Use at least $MIN_PASSWORD_LENGTH characters, e.g. from: openssl rand -hex 24 (hex is URL-safe)")
-    println(sha256Hex(password))
 }
 
 private fun fail(msg: String): Nothing {

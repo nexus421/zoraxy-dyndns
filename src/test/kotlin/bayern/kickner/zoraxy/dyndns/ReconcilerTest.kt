@@ -21,7 +21,7 @@ class ReconcilerTest {
     )
 
     private fun reconciler(config: Config = Config(listOf(fritz), mapOf("r2" to RuleConfig(Mode.OPEN_WHEN_EMPTY, emptyList())))) =
-        Reconciler(zoraxy.api, config, stateFile, clock = { 1_000L })
+        Reconciler(zoraxy.api, { config }, stateFile, clock = { 1_000L })
 
     @AfterTest
     fun stop() = zoraxy.stop()
@@ -97,5 +97,35 @@ class ReconcilerTest {
         assertEquals(false, status.enabled)
         assertEquals(0, status.entries)
         assertTrue(status.problems.single().startsWith("update failed"), status.problems.toString())
+    }
+
+    @Test
+    fun releasedRuleLeavesTheStatus() {
+        var config = Config(listOf(fritz), mapOf("r3" to RuleConfig(Mode.ENFORCE, emptyList())))
+        zoraxy.rules["r3"] = FakeRule(enabled = true)
+        val r = Reconciler(zoraxy.api, { config }, stateFile, clock = { 1_000L })
+        r.reconcile()
+        assertTrue("r3" in r.status().rules)
+        config = Config(listOf(fritz), emptyMap())
+        r.reconcile()
+        assertTrue("r3" !in r.status().rules)
+    }
+
+    @Test
+    fun resultCarriesTheTime() {
+        val r = reconciler()
+        r.recordResult("fritz", "good 1.2.3.4")
+        assertEquals(ClientResult("good 1.2.3.4", 1_000L), r.status().results["fritz"])
+    }
+
+    @Test
+    fun ruleOfAReportIsCleanedEvenWithoutAFullRunBefore() {
+        var config = Config(listOf(fritz), emptyMap())
+        val r = Reconciler(zoraxy.api, { config }, stateFile, clock = { 1_000L })
+        r.report(fritz, listOf(home))
+        assertTrue("87.176.150.207/32" in zoraxy.rules.getValue("r1").ips)
+        config = Config(emptyList(), emptyMap())
+        r.reconcile()
+        assertTrue("87.176.150.207/32" !in zoraxy.rules.getValue("r1").ips)
     }
 }

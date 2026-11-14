@@ -4,7 +4,7 @@ plugins {
 }
 
 group = "bayern.kickner"
-version = "0.1.0"
+version = "0.2.0"
 
 repositories {
     mavenCentral()
@@ -24,6 +24,7 @@ dependencyLocking {
 dependencies {
     implementation("bayern.kickner:Klogger:0.5.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-html-jvm:0.12.0")
 
     testImplementation(kotlin("test"))
 }

@@ -16,10 +16,10 @@ class ZoraxyApiTest {
         ]"""
         val rules = parseAccessRules(body)
         assertEquals(
-            RuleSnapshot("r1", true, false, mapOf("87.176.150.207/32" to "dyndns:fritzbox", "1.1.1.1" to "office"), mapOf("de" to "")),
+            RuleSnapshot("r1", "home-only", true, false, mapOf("87.176.150.207/32" to "dyndns:fritzbox", "1.1.1.1" to "office"), mapOf("de" to "")),
             rules["r1"],
         )
-        assertEquals(RuleSnapshot("default", false, false, emptyMap(), emptyMap()), rules["default"])
+        assertEquals(RuleSnapshot("default", "default", false, false, emptyMap(), emptyMap()), rules["default"])
     }
 
     @Test

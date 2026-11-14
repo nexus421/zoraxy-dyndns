@@ -5,8 +5,6 @@ import bayern.kickner.klogger.staticLog
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.time.Instant
 
 private const val TAG = "State"
@@ -32,12 +30,7 @@ data class State(val clients: Map<String, ClientState>, val managedRules: Set<St
             },
             managedRules = managedRules.sorted(),
         )
-        // NIO creates the file as 0600, java.io.File.createTempFile would follow the umask
-        val tmp = Files.createTempFile(file.absoluteFile.parentFile.toPath(), ".${file.name}", ".tmp")
-        runCatching {
-            Files.writeString(tmp, fileJson.encodeToString(content) + "\n")
-            Files.move(tmp, file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
-        }.also { Files.deleteIfExists(tmp) }.getOrThrow()
+        writeOwnerOnly(file, fileJson.encodeToString(content) + "\n")
     }
 
     companion object {

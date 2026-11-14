@@ -5,7 +5,9 @@
 Requirements: Linux amd64 or arm64 with glibc 2.34 or newer (Debian 12+, Ubuntu 22.04+), Zoraxy 3.3.3 or newer
 (tested with 3.3.5). Zoraxy's Docker image (Alpine, musl) is not supported.
 
-The binary must be named like its folder in Zoraxy's plugin directory:
+From the plugin store: Plugins, App Store, DynDNS Whitelist. Zoraxy downloads the binary and the icon itself.
+
+By hand: the binary must be named like its folder in Zoraxy's plugin directory.
 
 ```bash
 mkdir -p /opt/zoraxy/plugins/zoraxy-dyndns
@@ -26,8 +28,8 @@ release file, so compare the sum itself with the installed binary:
 echo "$(curl -sL https://github.com/nexus421/zoraxy-dyndns/releases/latest/download/dyndns_linux_amd64.sha256 | cut -d' ' -f1)  /opt/zoraxy/plugins/zoraxy-dyndns/zoraxy-dyndns" | sha256sum -c
 ```
 
-Restart Zoraxy, enable the plugin, edit `config.json` (see [Configuration](configuration.md)) and restart the
-plugin. The log shows `Config validated against N access rule(s)`.
+Restart Zoraxy and enable the plugin. The log shows `Config validated against N access rule(s)`. Then open the
+plugin's page and add the clients, see [Usage](usage.md#the-plugin-page).
 
 ## Zoraxy setup
 
@@ -48,5 +50,6 @@ terminates TLS, the plugin works and logs a warning on the first plain request.
 
 ## Updates
 
-Replace the binary, restart the plugin in Zoraxy. `config.json` and `state.json` stay. The Zoraxy plugin store
+Replace the binary, restart the plugin in Zoraxy. `config.json` and `state.json` stay. From 0.1.0: a `config.json`
+that is still the unedited template of 0.1.0 is ignored, set the plugin up on its page. The Zoraxy plugin store
 finds new releases through `.releaseurl` and `.introspect` in this repository.

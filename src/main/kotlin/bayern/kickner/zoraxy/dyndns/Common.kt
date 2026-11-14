@@ -4,7 +4,7 @@ import bayern.kickner.klogger.KLogger
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
-import java.nio.file.attribute.PosixFilePermission
+import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.time.ZoneId
@@ -58,9 +58,14 @@ const val MAX_LOG_MESSAGE = 1000
  */
 fun logLine(level: KLogger.Level, tag: String, message: String): String = "${level.name}/$tag: ${cleanText(message, MAX_LOG_MESSAGE)}"
 
-/** Limits [file] to its owner (`0600`), ignored on file systems without POSIX permissions. */
-fun restrictToOwner(file: File) {
+/**
+ * Writes [text] to [file] atomically and owner only (`0600`): a temporary file in the same directory, then a rename.
+ * NIO creates the temporary file as `0600`, `java.io.File.createTempFile` would follow the umask.
+ */
+fun writeOwnerOnly(file: File, text: String) {
+    val tmp = Files.createTempFile(file.absoluteFile.parentFile.toPath(), ".${file.name}", ".tmp")
     runCatching {
-        Files.setPosixFilePermissions(file.toPath(), setOf(PosixFilePermission.OWNER_READ, PosixFilePermission.OWNER_WRITE))
-    }
+        Files.writeString(tmp, text)
+        Files.move(tmp, file.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+    }.also { Files.deleteIfExists(tmp) }.getOrThrow()
 }

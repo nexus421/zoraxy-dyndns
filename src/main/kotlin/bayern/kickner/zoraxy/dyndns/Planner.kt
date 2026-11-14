@@ -3,11 +3,13 @@ package bayern.kickner.zoraxy.dyndns
 /**
  * One access rule as Zoraxy reports it (`/plugin/api/access/list`).
  *
+ * @property name The name shown in Zoraxy, the ID if the rule has none.
  * @property ips Whitelisted IPs and ranges, entry to comment.
  * @property countries Whitelisted country codes, code to comment.
  */
 data class RuleSnapshot(
     val id: String,
+    val name: String,
     val whitelistEnabled: Boolean,
     val allowLocal: Boolean,
     val ips: Map<String, String>,
