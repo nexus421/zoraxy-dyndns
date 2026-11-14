@@ -118,6 +118,7 @@ details.card > summary { cursor: pointer; list-style: none; }
 details.card > summary::-webkit-details-marker { display: none; }
 details.card > summary h2::before { content: "▸ "; color: var(--muted); }
 details.card[open] > summary h2::before { content: "▾ "; }
+.setup-steps { margin: 12px 0 0; padding-left: 22px; display: grid; gap: 6px; }
 .activity { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 4px; }
 .activity li { display: flex; gap: 12px; font-size: 13px; }
 .activity time { color: var(--muted); white-space: nowrap; }

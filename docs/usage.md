@@ -4,6 +4,9 @@
 
 Zoraxy shows it under Plugins, DynDNS Whitelist. It follows Zoraxy's light and dark mode.
 
+- **Setup in Zoraxy**: a short guide for the DynDNS host in Zoraxy, open until the first client exists, the same
+  steps as [Deployment](deployment.md#zoraxy-setup).
+
 - **DynDNS host**: the Zoraxy host with the tag `dyndns`. Only used to fill in the router settings.
 - **Clients**: per client the last answer (green `good` or `nochg`, yellow `badauth` or `badrequest`, red `911`) with
   its time, the access rules, the last addresses and the time of the last update. A wrong password of a known client

@@ -118,4 +118,22 @@ class PageTest {
         val footer = render().substringAfter("<footer").substringBefore("</footer>")
         assertTrue("/nic/update?myip=&lt;ipaddr&gt;" in footer, footer)
     }
+
+    @Test
+    fun setupGuideIsOpenUntilTheFirstClient() {
+        val empty = render(Config(emptyList(), emptyMap())).substringAfter("""id="setup"""").substringBefore("</details>")
+        assertTrue("Setup in Zoraxy" in empty, empty)
+        assertTrue("127.0.0.1:1" in empty && "dyndns" in empty && "/nic/update" in empty, empty)
+        val tag = Regex("""<details[^>]*id="setup"[^>]*>""")
+        val emptyTag = tag.find(render(Config(emptyList(), emptyMap())))!!.value
+        assertTrue("open" in emptyTag, emptyTag)
+        val withClient = tag.find(render())!!.value
+        assertTrue("open" !in withClient, withClient)
+    }
+
+    @Test
+    fun setupGuideUsesTheDyndnsHost() {
+        val guide = render(config.copy(dyndnsHost = "d.example")).substringAfter("""id="setup"""").substringBefore("</details>")
+        assertTrue("https://d.example/nic/update" in guide, guide)
+    }
 }

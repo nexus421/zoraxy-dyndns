@@ -74,6 +74,7 @@ fun renderPage(view: PageView): String = buildString {
                 view.notice?.let { div("notice ${if (it.ok) "success" else "error"}") { id = "notice"; +it.text } }
                 view.zoraxyRules.exceptionOrNull()?.let { div("notice error") { +"Cannot read Zoraxy's access rules: ${it.message}" } }
                 view.secret?.let { secretBox(it, view.config.dyndnsHost) }
+                setup(view.config)
                 clients(view)
                 rules(view)
                 activity(view.activity)
@@ -107,6 +108,49 @@ private fun FlowContent.header(view: PageView) {
         }
         button(classes = "btn sm", type = ButtonType.submit) { +"Save" }
         span("hint") { +"The Zoraxy host with the tag dyndns. Used for the router settings shown after a new password." }
+    }
+}
+
+/** Short setup guide for Zoraxy, open until the first client exists. */
+private fun FlowContent.setup(config: Config) {
+    val host = config.dyndnsHost ?: "<dyndns host>"
+    details("card") {
+        id = "setup"
+        if (config.clients.isEmpty()) open = true
+        summary { h2 { +"Setup in Zoraxy" } }
+        ol("setup-steps") {
+            li {
+                +"Pick a host name only for DynDNS, e.g. "
+                code { +"dyndns.example.com" }
+                +", with a DNS record pointing to Zoraxy."
+            }
+            li {
+                +"HTTP Proxy, Create Proxy Rule: type host, that name, target "
+                code { +"127.0.0.1:1" }
+                +". Nothing listens there, so every path except "
+                code { +"/nic/update" }
+                +" ends in an error. Zoraxy needs a target."
+            }
+            li {
+                +"Edit the rule: an access rule without whitelist (e.g. Default), rate limit on (e.g. 10 per second), tag "
+                code { +"dyndns" }
+                +"."
+            }
+            li { +"Get a TLS certificate for the host (TLS / SSL certificates, ACME)." }
+            li {
+                +"Plugin Manager: add this plugin to the tag group "
+                code { +"dyndns" }
+                +"."
+            }
+            li {
+                +"Check: "
+                code { +"https://$host${Introspect.CAPTURE_PATH}" }
+                +" must answer "
+                code { +"badauth" }
+                +"."
+            }
+            li { +"Enter the host above as DynDNS host, add a client with the access rules of your protected services and copy the shown values into the router." }
+        }
     }
 }
 

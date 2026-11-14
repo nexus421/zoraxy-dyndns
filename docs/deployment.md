@@ -38,7 +38,9 @@ plugin's page and add the clients, see [Usage](usage.md#the-plugin-page).
    plugin switches the whitelist on for you.
 2. **DynDNS host**, e.g. `dyndns.example.com`, with a DNS record pointing to Zoraxy:
    - access rule **without** whitelist (e.g. `default`), otherwise the router is blocked before the plugin sees it
-   - upstream an unused address such as `127.0.0.1:1`, so every other path fails
+   - upstream an unused address such as `127.0.0.1:1`, so every other path fails. Zoraxy needs a target, and
+     `127.0.0.1` never leaves the server while port 1 is reserved and not used, so nothing is reachable through
+     this host except the plugin's `/nic/update`
    - rate limiting on: it runs before the plugin and stops password guessing
    - tag `dyndns`
 3. **Plugins, tag groups**: add the plugin to the tag `dyndns`.

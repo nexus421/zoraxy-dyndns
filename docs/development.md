@@ -106,7 +106,7 @@ or semicolons in prose. Deliberate deviation: expected outcomes are Kotlin's `Re
 
 Verified:
 
-- 155 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
+- 157 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
   aliases, config parsing and validation (strict keys, modes, fixed entries, names, hashes, the DynDNS host),
   writing `config.json` (round trip, owner only, an invalid change writes nothing), `state.json` (round trip, owner
   only, broken files, single invalid entries), every planner case of the three modes, parsing of Zoraxy's access
