@@ -6,8 +6,8 @@
     "description": "Turns Zoraxy into a DynDNS (dyndns2) endpoint: a router such as a FRITZ!Box pushes its current IP and the plugin keeps it in the whitelist of the configured access rules.",
     "url": "https://github.com/nexus421/zoraxy-dyndns",
     "type": 0,
-    "version_major": 0,
-    "version_minor": 2,
+    "version_major": 1,
+    "version_minor": 0,
     "version_patch": 0,
     "static_capture_paths": [
         {
