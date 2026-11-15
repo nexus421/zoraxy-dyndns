@@ -94,6 +94,7 @@ class UiActions(
             log = "client $name created (rules ${rules.joinToString { call.ruleName(it) }})",
             drafts = Drafts(newClientName = name, newClientRules = rules),
             secret = Secret(name, password),
+            stored = { reconciler.forget(name) },
         ) { config ->
             checkName(name, config)
             require(rules.isNotEmpty()) { "Pick at least one access rule." }
@@ -128,7 +129,11 @@ class UiActions(
 
     private fun deleteClient(call: Call): ActionResult {
         val name = call.one("name")
-        return change("Client $name deleted, its whitelist entries are removed.", "client $name deleted") { config ->
+        return change(
+            ok = "Client $name deleted, its whitelist entries are removed.",
+            log = "client $name deleted",
+            stored = { reconciler.forget(name) },
+        ) { config ->
             config.client(name)
             config.copy(clients = config.clients.filter { it.name != name })
         }
@@ -186,15 +191,18 @@ class UiActions(
     /**
      * Stores the config [transform] returns and reconciles. A rejected change leaves memory and file as they were
      * and shows [drafts] again. A stored change whose reconcile fails stays stored, the loop retries every minute.
+     * [stored] runs once the change is written and before the reconcile, for state that must not wait for Zoraxy.
      */
     private fun change(
         ok: String,
         log: String,
         drafts: Drafts = Drafts(),
         secret: Secret? = null,
+        stored: () -> Unit = {},
         transform: (Config) -> Config,
     ): ActionResult = store.update(transform).fold(
         onSuccess = {
+            stored()
             infoLog { "UI: $log" }
             runCatching { reconciler.reconcile() }.fold(
                 onSuccess = { ActionResult(Notice(true, ok), secret) },

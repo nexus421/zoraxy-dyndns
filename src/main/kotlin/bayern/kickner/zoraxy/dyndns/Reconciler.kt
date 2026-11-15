@@ -66,6 +66,18 @@ class Reconciler(
         return result.copy(changed = result.changed || previous != addresses)
     }
 
+    /**
+     * Forgets the last report of client [name] and saves it at once, without asking Zoraxy. Called when a client is
+     * deleted or created, so a new client of the same name never inherits the addresses of the old one, even if
+     * Zoraxy is unreachable at that moment. The next successful run removes the entries from the whitelists.
+     */
+    @Synchronized
+    fun forget(name: String) {
+        if (name !in state.clients) return
+        state = state.copy(clients = state.clients - name)
+        save()
+    }
+
     /** Remembers the last dyndns2 answer to [client] for the status page. */
     @Synchronized
     fun recordResult(client: String, result: String) {

@@ -111,6 +111,20 @@ class UiActionsTest {
     }
 
     @Test
+    fun deleteDuringZoraxyOutageDoesNotPassOldAddressToNewClient() {
+        addFritz()
+        run("client/add", "name" to "other", "rule" to "r1")
+        reconciler.report(store.current().clients.first { it.name == "fritz" }, listOf(home))
+        zoraxy.failList = true
+        assertTrue(run("client/delete", "name" to "fritz").notice.ok.not())
+        addFritz()
+        zoraxy.failList = false
+        reconciler.reconcile()
+        assertTrue(zoraxy.rules.getValue("r1").ips.isEmpty(), zoraxy.rules.getValue("r1").ips.toString())
+        assertTrue("fritz" !in reconciler.status().clients)
+    }
+
+    @Test
     fun staleClientGivesUnknownClient() {
         val before = configFile.readBytes()
         listOf("client/delete", "client/password").forEach {

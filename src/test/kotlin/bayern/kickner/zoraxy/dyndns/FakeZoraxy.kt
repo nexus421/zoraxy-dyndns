@@ -33,6 +33,10 @@ class FakeZoraxy(val rules: MutableMap<String, FakeRule>) {
     @Volatile
     var failAdd = false
 
+    /** While true, listing the access rules answers HTTP 500, as if Zoraxy's API were down. */
+    @Volatile
+    var failList = false
+
     private val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 16).apply {
         createContext("/plugin/api/") { ex -> handle(ex) }
         start()
@@ -51,7 +55,7 @@ class FakeZoraxy(val rules: MutableMap<String, FakeRule>) {
             URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) to URLDecoder.decode(it.substringAfter('='), Charsets.UTF_8)
         }
         val path = ex.requestURI.path
-        if (path == "/plugin/api/access/list") return reply(ex, 200, accessList())
+        if (path == "/plugin/api/access/list") return if (failList) reply(ex, 500, """{"error":"unavailable"}""") else reply(ex, 200, accessList())
         val rule = rules[form["id"]] ?: return reply(ex, 200, """{"error":"rule not found"}""")
         when (path) {
             "/plugin/api/whitelist/ip/add" -> {
