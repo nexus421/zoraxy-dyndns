@@ -32,11 +32,15 @@ class ServerTest {
 
     private val csp = "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'self'"
 
-    /** A form POST to the plugin like `app.js` sends it. */
+    /** Zoraxy's CSRF token as its admin proxy adds it to every request it forwards to the plugin page. */
+    private val token = "t0k3n"
+
+    /** A form POST to the plugin like `app.js` sends it through Zoraxy, [csrf] `null` like a direct request. */
     @Suppress("DEPRECATION")
-    private fun post(path: String, body: String): Answer {
+    private fun post(path: String, body: String, csrf: String? = token): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.requestMethod = "POST"
+        if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
         conn.outputStream.use { it.write(body.toByteArray()) }
@@ -50,8 +54,9 @@ class ServerTest {
 
     /** A request to the plugin. [URL] instead of [java.net.URI], so a broken escape like `%zz` reaches the server. */
     @Suppress("DEPRECATION")
-    private fun get(path: String, user: String? = "fritz", pw: String = password, forwardedFor: String? = null): Answer {
+    private fun get(path: String, user: String? = "fritz", pw: String = password, forwardedFor: String? = null, csrf: String? = null): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
+        if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
         if (user != null) conn.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString("$user:$pw".toByteArray()))
         if (forwardedFor != null) conn.setRequestProperty("X-Forwarded-For", forwardedFor)
         val code = conn.responseCode
@@ -104,7 +109,7 @@ class ServerTest {
     @Test
     fun statusPageEscapesAndForbidsScripts() {
         update("?myip=93.184.215.14") // collides with the manual entry, the warning quotes its comment
-        val (code, body, conn) = get("/ui/", user = null)
+        val (code, body, conn) = get("/ui/", user = null, csrf = token)
         assertEquals(200, code)
         assertTrue("&lt;b&gt;office&lt;/b&gt;" in body, body)
         assertTrue("<b>office" !in body, body)
@@ -131,7 +136,7 @@ class ServerTest {
         val answer = post("/ui/client/add", "name=router&rule=r1")
         assertEquals(200, answer.code)
         assertTrue("""id="secret-password"""" in answer.body, answer.body)
-        assertTrue("secret-password" !in get("/ui/", user = null).body)
+        assertTrue("secret-password" !in get("/ui/", user = null, csrf = token).body)
         assertTrue(store.current().clients.any { it.name == "router" })
     }
 
@@ -151,6 +156,16 @@ class ServerTest {
         val body = conn.inputStream.bufferedReader().use { it.readText() }
         assertEquals(csp, conn.getHeaderField("Content-Security-Policy"))
         assertTrue("""content="t0k3n"""" in body)
+    }
+
+    @Test
+    fun pageAndActionsWithoutZoraxysHeaderAreRefused() {
+        assertEquals(403, get("/ui/", user = null).code)
+        assertEquals(403, post("/ui/client/add", "name=router&rule=r1", csrf = null).code)
+        assertEquals(403, post("/ui/client/add", "name=router&rule=r1", csrf = "").code)
+        assertTrue(store.current().clients.none { it.name == "router" })
+        // The stylesheet and the script carry no data and stay reachable
+        assertEquals(200, get("/ui/app.js", user = null).code)
     }
 
     @Test
@@ -208,7 +223,7 @@ class ServerTest {
         assertEquals(403, conn.responseCode)
         assertEquals(0, exits)
         // Still running
-        assertEquals(200, get("/ui/", user = null).code)
+        assertEquals(200, get("/ui/", user = null, csrf = token).code)
     }
 
     @Test

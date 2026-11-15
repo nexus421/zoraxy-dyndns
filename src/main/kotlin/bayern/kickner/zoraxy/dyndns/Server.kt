@@ -16,7 +16,8 @@ import kotlin.system.exitProcess
  * `GET /nic/update?myip=<ipv4>[,<ipv6 or ipv6 prefix>]` with Basic Auth.
  *
  * Under `/ui/` it serves the status and settings page, its stylesheet and script, and the POST actions of
- * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check.
+ * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check, page and actions
+ * without the `X-Zoraxy-Csrf` header Zoraxy adds there are refused.
  *
  * It runs on the single dispatcher thread of the JDK server, requests are handled one after another.
  *
@@ -146,6 +147,13 @@ class Server(
     private fun handleUi(ex: HttpExchange) {
         val path = ex.requestURI.path.removePrefix(Introspect.UI_PATH).trim('/')
         val get = ex.requestMethod == "GET"
+        // Page and actions only through Zoraxy's admin proxy, which adds X-Zoraxy-Csrf after its login and CSRF check.
+        // A web page in a browser or a request forged through another service on the host cannot set that header.
+        val guarded = (path.isEmpty() && get) || (path in UiActions.ACTIONS && ex.requestMethod == "POST")
+        if (guarded && csrf(ex).isEmpty()) {
+            warnLog { "Refused a request to the plugin page that did not come through Zoraxy" }
+            return reply(ex, 403, "forbidden")
+        }
         when {
             path.isEmpty() && get -> page(ex, PageView(config(), reconciler.status(), zoraxyRules(), activity.entries(), csrf(ex)))
             path == "app.css" && get -> asset(ex, "text/css; charset=utf-8", APP_CSS)
