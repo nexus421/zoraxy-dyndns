@@ -24,9 +24,11 @@ client may put its password there.
 ## Password guessing
 
 The plugin does not slow down failed logins: a delay would hold one of its four threads and let anyone stall real
-updates. A client that stalls while sending its request, for example by announcing a body it never sends, holds
-one thread for at most 5 seconds, the others keep answering. Changes still happen one after another. Zoraxy's rate
-limit on the DynDNS host runs before the plugin sees a request and stops guessing, see
+updates. A request that announces a body the plugin does not read, for example an update with a body it never sends,
+holds no thread: the plugin answers and closes the connection instead of waiting for the rest. A client that stalls
+while sending its headers holds one thread for at most 5 seconds, the others keep answering. Through Zoraxy 3.3.5
+neither reaches the plugin as a stall, the end-to-end test checks both paths. Changes still happen one after
+another. Zoraxy's rate limit on the DynDNS host runs before the plugin sees a request and stops guessing, see
 [Deployment](deployment.md#zoraxy-setup). The end-to-end test checks that it answers 429.
 
 ## Transport

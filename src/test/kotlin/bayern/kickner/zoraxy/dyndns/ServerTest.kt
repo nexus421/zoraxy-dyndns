@@ -78,6 +78,32 @@ class ServerTest {
         getOutputStream().flush()
     }
 
+    /** A request that never finishes its headers, held open until closed. */
+    private fun headerStall(): Socket = Socket("127.0.0.1", port).apply {
+        getOutputStream().write("POST /s_capture HTTP/1.1\r\nHost: x\r\n".toByteArray())
+        getOutputStream().flush()
+    }
+
+    /** Sends [request] on [socket] and reads one answer: the status line and the body (by Content-Length). */
+    private fun exchange(socket: Socket, request: String): Pair<String, String> {
+        socket.soTimeout = 4_000
+        socket.getOutputStream().write(request.toByteArray())
+        socket.getOutputStream().flush()
+        val input = socket.getInputStream()
+        fun line() = generateSequence { input.read().takeIf { it >= 0 } }.takeWhile { it != '\n'.code }
+            .map { it.toChar() }.joinToString("").trimEnd('\r')
+        val status = line()
+        var length = 0
+        while (true) {
+            val header = line()
+            if (header.isEmpty()) break
+            if (header.startsWith("Content-length:", ignoreCase = true)) length = header.substringAfter(':').trim().toInt()
+        }
+        return status to input.readNBytes(length).decodeToString()
+    }
+
+    private val basicAuth = "Basic " + Base64.getEncoder().encodeToString("fritz:$password".toByteArray())
+
     private fun update(query: String, user: String? = "fritz", pw: String = password) = get("/s_capture$query", user, pw).let { "${it.body} ${it.code}" }
 
     @AfterTest
@@ -120,8 +146,45 @@ class ServerTest {
     }
 
     @Test
-    fun stalledRequestsAreDroppedAfterTheTimeLimit() {
+    fun fourStalledBodiesHoldNoThread() {
         val stalled = List(4) { stall() }
+        try {
+            Thread.sleep(300)
+            val started = System.currentTimeMillis()
+            assertEquals("good 87.176.150.207 200", update("?myip=87.176.150.207"))
+            assertTrue(System.currentTimeMillis() - started < 2_000, "answered within 2 s")
+        } finally {
+            stalled.forEach(Socket::close)
+        }
+    }
+
+    @Test
+    fun anUnreadBodyClosesTheConnectionInsteadOfWaiting() = Socket("127.0.0.1", port).use { socket ->
+        val (status, _) = exchange(socket, "POST /s_capture HTTP/1.1\r\nHost: x\r\nContent-Length: 5\r\n\r\nabcde")
+        assertEquals("HTTP/1.1 401 Unauthorized", status)
+        assertEquals(-1, socket.getInputStream().read(), "connection closed")
+    }
+
+    @Test
+    fun updatesKeepTheirConnection() = Socket("127.0.0.1", port).use { socket ->
+        val request = { ip: String -> "GET /s_capture?myip=$ip HTTP/1.1\r\nHost: x\r\nAuthorization: $basicAuth\r\n\r\n" }
+        assertEquals("HTTP/1.1 200 OK" to "good 87.176.150.207", exchange(socket, request("87.176.150.207")))
+        assertEquals("HTTP/1.1 200 OK" to "nochg 87.176.150.207", exchange(socket, request("87.176.150.207")))
+    }
+
+    @Test
+    fun pageActionsKeepTheirConnection() = Socket("127.0.0.1", port).use { socket ->
+        val body = "name=router&rule=r1"
+        val headers = "Host: $zoraxyHost\r\nX-Zoraxy-Csrf: $token\r\n"
+        val post = "POST /ui/client/add HTTP/1.1\r\n${headers}Content-Type: application/x-www-form-urlencoded\r\nContent-Length: ${body.length}\r\n\r\n$body"
+        assertEquals("HTTP/1.1 200 OK", exchange(socket, post).first)
+        assertEquals("HTTP/1.1 200 OK", exchange(socket, "GET /ui/ HTTP/1.1\r\n$headers\r\n").first)
+        assertTrue(store.current().clients.any { it.name == "router" })
+    }
+
+    @Test
+    fun stalledHeadersAreDroppedAfterTheTimeLimit() {
+        val stalled = List(4) { headerStall() }
         try {
             Thread.sleep((REQUEST_TIMEOUT_SECONDS + 2) * 1000L)
             assertEquals("good 87.176.150.207 200", update("?myip=87.176.150.207"))

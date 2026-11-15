@@ -180,6 +180,31 @@ PPORT=$(pgrep -af "$PDIR/zoraxy-dyndns -configure" | grep -oP '"port":\K[0-9]+' 
 rebind() { curl "${C[@]}" -o /dev/null -w '%{http_code}' -H 'X-Zoraxy-Csrf: x' -H "Host: rebind.test:$PPORT" "http://127.0.0.1:$PPORT/ui/$1" "${@:2}"; }
 check "T56 page and actions refuse a Host with the plugin's own port" "403 403" "$(rebind '') $(rebind client/add -d name=evil -d rule="$RID")"
 check "T56b the refused action changed nothing" "no" "$(grep -q '"evil"' "$PDIR/config.json" && echo yes || echo no)"
+# Four requests that announce a body and never send it, more than one per plugin thread: none may hold a thread
+stalls() { # <direct|zoraxy> opens 4 such requests and keeps them open for 15 s
+  python3 - "$1" "$PPORT" <<'PY' &
+import socket, ssl, sys, time
+socks = []
+for _ in range(4):
+    if sys.argv[1] == "direct":
+        s = socket.create_connection(("127.0.0.1", int(sys.argv[2])))
+        s.sendall(b"POST /s_capture HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n")
+    else:
+        ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+        s = ctx.wrap_socket(socket.create_connection(("127.0.0.1", 18080)), server_hostname="dyndns.test")
+        s.sendall(b"POST /nic/update HTTP/1.1\r\nHost: dyndns.test\r\nContent-Length: 1000\r\n\r\n")
+    socks.append(s)
+time.sleep(15)
+PY
+  STALLS=$!; sleep 1
+}
+quick_update() { curl "${C[@]}" "${R[@]}" --max-time 2 -w ' %{http_code}' "https://fritzbox:$PW@dyndns.test:18080/nic/update?myip=87.176.150.207"; }
+stalls direct
+contains "T58 four stalled requests on the plugin's port hold no thread" "87.176.150.207 200" "$(quick_update)"
+kill $STALLS 2>/dev/null; wait $STALLS 2>/dev/null; sleep 1
+stalls zoraxy
+contains "T59 four stalled requests through Zoraxy hold no thread" "87.176.150.207 200" "$(quick_update)"
+kill $STALLS 2>/dev/null; wait $STALLS 2>/dev/null; sleep 1
 
 # --- reconcile loop --------------------------------------------------------------------------------
 admin /api/whitelist/enable -d id="$RID" -d enable=false >/dev/null

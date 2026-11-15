@@ -23,7 +23,8 @@ import kotlin.system.exitProcess
  *
  * [THREADS] threads answer requests, so a client that stalls holds only one of them. Changes to the state and the
  * whitelists still happen one after another, [Reconciler] and [ConfigStore] serialize them. A client gets
- * [REQUEST_TIMEOUT_SECONDS] seconds to send its request, see [limitRequestTime].
+ * [REQUEST_TIMEOUT_SECONDS] seconds to send its request, and a body nobody reads is never waited for, see
+ * [limitRequestTime].
  *
  * @param port The port Zoraxy assigned in the configure spec.
  * @param config The current config, see [ConfigStore].
@@ -191,6 +192,17 @@ class Server(
         return (hostPort.toIntOrNull() ?: 80) == port
     }
 
+    /**
+     * Marks a request without a body as read to its end, so its connection stays open for the next request. With
+     * `drainAmount` 0 (see [limitRequestTime]) the JDK closes every connection whose body was not read to its end, and
+     * it never reads an empty body on its own. Reading it here returns at once, nothing is read from the network.
+     */
+    private fun readEmptyBody(ex: HttpExchange) {
+        if (ex.requestHeaders.containsKey("Transfer-Encoding")) return
+        if ((ex.requestHeaders.getFirst("Content-Length")?.trim() ?: "0") != "0") return
+        runCatching { ex.requestBody.read() }
+    }
+
     /** Zoraxy's CSRF token, which it adds to every request it forwards to the plugin UI. */
     private fun csrf(ex: HttpExchange): String = ex.requestHeaders.getFirst("X-Zoraxy-Csrf").orEmpty()
 
@@ -207,6 +219,7 @@ class Server(
 
     /** Answers a failure with 500 `911` instead of dropping the connection, and always closes the exchange. */
     private fun safely(ex: HttpExchange, block: () -> Unit) {
+        readEmptyBody(ex)
         runCatching(block).onFailure {
             warnLog { "Internal error: ${it.message}" }
             runCatching { reply(ex, 500, "911") }
@@ -232,13 +245,19 @@ private const val THREADS = 4
 const val REQUEST_TIMEOUT_SECONDS = 5
 
 /**
- * Lets the JDK server drop a client that stalls while sending its request, a body it announced but never sends
- * included. The JDK reads the property once, before the first [HttpServer] is created, so [main] calls this first.
- * `sun.net.httpserver.maxRspTime` stays unset on purpose: it would also cut a slow answer, for example while Zoraxy
- * is slow to answer the plugin.
+ * Keeps a stalling client from holding a thread. `maxReqTime` drops a client that takes longer than
+ * [REQUEST_TIMEOUT_SECONDS] to send its request. `drainAmount` 0 makes the JDK close a connection whose request body
+ * was not read (an update answered without looking at a body it announced, a form above the size limit) instead of
+ * reading the rest to reuse the connection, which would wait for bytes that may never come. A request whose body was
+ * read, and every request without a body, keeps its connection.
+ *
+ * The JDK reads both properties once, before the first [HttpServer] is created, so [main] calls this first.
+ * native-image.properties sets them at build time as well. `sun.net.httpserver.maxRspTime` stays unset on purpose:
+ * it would also cut a slow answer, for example while Zoraxy is slow to answer the plugin.
  */
 fun limitRequestTime() {
     System.setProperty("sun.net.httpserver.maxReqTime", REQUEST_TIMEOUT_SECONDS.toString())
+    System.setProperty("sun.net.httpserver.drainAmount", "0")
 }
 
 /** Largest form body an action accepts. Every real form is far below. */
