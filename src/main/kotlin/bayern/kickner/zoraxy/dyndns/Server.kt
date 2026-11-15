@@ -224,5 +224,7 @@ private const val PAGE_CSP =
  * checkboxes, so every name maps to all its values in order. The JDK server already rejects a URI with broken
  * percent-encoding, a broken body reads as empty and the action reports the missing field.
  */
-internal fun parseForm(raw: String?): Map<String, List<String>> = raw.orEmpty().split('&').filter(String::isNotEmpty)
+internal fun parseForm(raw: String?): Map<String, List<String>> = raw.orEmpty()
+    .split('&')
+    .filter(String::isNotEmpty)
     .groupBy({ URLDecoder.decode(it.substringBefore('='), Charsets.UTF_8) }, { URLDecoder.decode(it.substringAfter('=', ""), Charsets.UTF_8) })

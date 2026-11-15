@@ -70,7 +70,7 @@ It does one thing: keep the changing IPs of a few sites in Zoraxy's whitelists. 
 and aims to be simple, stable, secure and reliable. The code stays small enough to review alone.
 
 zoraxy-dyndns is written with AI. Code, tests and documentation were created with Claude by Anthropic, directed,
-tested and spot-checked by me.
+tested and reviewed by me.
 
 ## License
 
