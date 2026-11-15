@@ -172,9 +172,14 @@ s.sendall(b"POST /nic/update HTTP/1.1\r\nHost: dyndns.test\r\nContent-Length: 10
 time.sleep(15)
 PY
 STALL=$!; sleep 1
-contains "T54 a stalled request does not block other updates" "87.176.150.207 200" \
+contains "T57 a stalled request does not block other updates" "87.176.150.207 200" \
   "$(curl "${C[@]}" "${R[@]}" --max-time 4 -w ' %{http_code}' "https://fritzbox:$PW@dyndns.test:18080/nic/update?myip=87.176.150.207")"
 kill $STALL 2>/dev/null; wait $STALL 2>/dev/null
+# A DNS-rebinding page reaches the plugin's port directly: it can set the header, but its Host names the plugin's port
+PPORT=$(pgrep -af "$PDIR/zoraxy-dyndns -configure" | grep -oP '"port":\K[0-9]+' | head -1)
+rebind() { curl "${C[@]}" -o /dev/null -w '%{http_code}' -H 'X-Zoraxy-Csrf: x' -H "Host: rebind.test:$PPORT" "http://127.0.0.1:$PPORT/ui/$1" "${@:2}"; }
+check "T56 page and actions refuse a Host with the plugin's own port" "403 403" "$(rebind '') $(rebind client/add -d name=evil -d rule="$RID")"
+check "T56b the refused action changed nothing" "no" "$(grep -q '"evil"' "$PDIR/config.json" && echo yes || echo no)"
 
 # --- reconcile loop --------------------------------------------------------------------------------
 admin /api/whitelist/enable -d id="$RID" -d enable=false >/dev/null

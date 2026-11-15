@@ -17,8 +17,9 @@ import kotlin.system.exitProcess
  * `GET /nic/update?myip=<ipv4>[,<ipv6 or ipv6 prefix>]` with Basic Auth.
  *
  * Under `/ui/` it serves the status and settings page, its stylesheet and script, and the POST actions of
- * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check, page and actions
- * without the `X-Zoraxy-Csrf` header Zoraxy adds there are refused.
+ * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check. Page and actions
+ * without the `X-Zoraxy-Csrf` header Zoraxy adds there, or with a Host header that names the plugin's own port, are
+ * refused.
  *
  * [THREADS] threads answer requests, so a client that stalls holds only one of them. Changes to the state and the
  * whitelists still happen one after another, [Reconciler] and [ConfigStore] serialize them. A client gets
@@ -151,10 +152,11 @@ class Server(
     private fun handleUi(ex: HttpExchange) {
         val path = ex.requestURI.path.removePrefix(Introspect.UI_PATH).trim('/')
         val get = ex.requestMethod == "GET"
-        // Page and actions only through Zoraxy's admin proxy, which adds X-Zoraxy-Csrf after its login and CSRF check.
-        // A web page in a browser or a request forged through another service on the host cannot set that header.
+        // Page and actions only through Zoraxy's admin proxy, which adds X-Zoraxy-Csrf after its login and CSRF check
+        // and keeps the admin's Host header. A cross-site form cannot set the header. A DNS-rebinding page can, but it
+        // has to name the plugin's own port in its Host header, which a request through Zoraxy never does.
         val guarded = (path.isEmpty() && get) || (path in UiActions.ACTIONS && ex.requestMethod == "POST")
-        if (guarded && csrf(ex).isEmpty()) {
+        if (guarded && (csrf(ex).isEmpty() || namesOwnPort(ex))) {
             warnLog { "Refused a request to the plugin page that did not come through Zoraxy" }
             return reply(ex, 403, "forbidden")
         }
@@ -177,6 +179,16 @@ class Server(
         val rules = result.zoraxy ?: zoraxyRules()
         val view = PageView(config(), reconciler.status(), rules, activity.entries(), csrf(ex), result.notice, result.secret, result.drafts)
         page(ex, view)
+    }
+
+    /**
+     * Whether the Host header names this plugin's own port, as a request sent straight to the plugin does. Zoraxy's
+     * admin proxy forwards the admin's original Host, the address of Zoraxy itself. A Host without a port means 80.
+     */
+    private fun namesOwnPort(ex: HttpExchange): Boolean {
+        val host = ex.requestHeaders.getFirst("Host") ?: return false
+        val hostPort = host.substringAfterLast(']').substringAfter(':', "")
+        return (hostPort.toIntOrNull() ?: 80) == port
     }
 
     /** Zoraxy's CSRF token, which it adds to every request it forwards to the plugin UI. */

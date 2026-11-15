@@ -36,12 +36,16 @@ class ServerTest {
     /** Zoraxy's CSRF token as its admin proxy adds it to every request it forwards to the plugin page. */
     private val token = "t0k3n"
 
+    /** The Host header Zoraxy's admin proxy forwards: the admin's address of Zoraxy, never the plugin's port. */
+    private val zoraxyHost = "zoraxy.example:8000"
+
     /** A form POST to the plugin like `app.js` sends it through Zoraxy, [csrf] `null` like a direct request. */
     @Suppress("DEPRECATION")
-    private fun post(path: String, body: String, csrf: String? = token): Answer {
+    private fun post(path: String, body: String, csrf: String? = token, host: String = zoraxyHost): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.requestMethod = "POST"
         conn.readTimeout = 4_000
+        conn.setRequestProperty("Host", host)
         if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -56,9 +60,10 @@ class ServerTest {
 
     /** A request to the plugin. [URL] instead of [java.net.URI], so a broken escape like `%zz` reaches the server. */
     @Suppress("DEPRECATION")
-    private fun get(path: String, user: String? = "fritz", pw: String = password, forwardedFor: String? = null, csrf: String? = null): Answer {
+    private fun get(path: String, user: String? = "fritz", pw: String = password, forwardedFor: String? = null, csrf: String? = null, host: String = zoraxyHost): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
+        conn.setRequestProperty("Host", host)
         conn.readTimeout = 4_000
         if (user != null) conn.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString("$user:$pw".toByteArray()))
         if (forwardedFor != null) conn.setRequestProperty("X-Forwarded-For", forwardedFor)
@@ -181,6 +186,7 @@ class ServerTest {
         @Suppress("DEPRECATION")
         val conn = URL("http://127.0.0.1:$port/ui/").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.setRequestProperty("X-Zoraxy-Csrf", "t0k3n")
+        conn.setRequestProperty("Host", zoraxyHost)
         val body = conn.inputStream.bufferedReader().use { it.readText() }
         assertEquals(csp, conn.getHeaderField("Content-Security-Policy"))
         assertTrue("""content="t0k3n"""" in body)
@@ -194,6 +200,18 @@ class ServerTest {
         assertTrue(store.current().clients.none { it.name == "router" })
         // The stylesheet and the script carry no data and stay reachable
         assertEquals(200, get("/ui/app.js", user = null).code)
+    }
+
+    @Test
+    fun aRequestNamingThePluginsOwnPortIsRefused() {
+        // A DNS-rebinding page is same origin for the browser, so it can set the header, but its Host names the plugin's port
+        assertEquals(403, get("/ui/", user = null, csrf = token, host = "rebind.example:$port").code)
+        assertEquals(403, post("/ui/client/add", "name=router&rule=r1", host = "rebind.example:$port").code)
+        assertEquals(403, post("/ui/client/add", "name=router&rule=r1", host = "[::1]:$port").code)
+        assertTrue(store.current().clients.none { it.name == "router" })
+        // Through Zoraxy the Host is Zoraxy's own address, with or without a port
+        assertEquals(200, get("/ui/", user = null, csrf = token, host = "zoraxy.example").code)
+        assertEquals(200, get("/ui/", user = null, csrf = token, host = "[2001:db8::1]:8000").code)
     }
 
     @Test

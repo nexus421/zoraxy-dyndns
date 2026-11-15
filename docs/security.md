@@ -66,8 +66,10 @@ Everything a client sends is untrusted:
 Zoraxy forwards `/plugin.ui/<id>/` only after its login and checks its CSRF token (`gorilla/csrf`) on every POST
 before the plugin sees it. The page's script sends that token with every change, a forged form from another site
 fails at Zoraxy. On its own port the plugin serves the page and its changes only with the `X-Zoraxy-Csrf` header
-that Zoraxy's admin proxy adds. A web page in a browser on the Zoraxy host, or a request that another service on the
-host can be tricked into sending (server-side request forgery), cannot set that header and is refused. Every change
+that Zoraxy's admin proxy adds, and only when the `Host` header does not name the plugin's own port. Zoraxy's proxy
+forwards the admin's original `Host`, the address of Zoraxy itself. A cross-site form or a request that another
+service on the host can be tricked into sending (server-side request forgery) cannot set the header. A DNS-rebinding
+page can set it, but it reaches the plugin only by naming the plugin's port. Both are refused. Every change
 is validated with the same rules as loading `config.json`, an invalid one changes nothing. Each change is logged as
 one `UI:` line, without passwords. A form body is limited to 64 KiB. Zoraxy stops the plugin by calling `/term`
 directly on the plugin's port. The same path through the admin pages is refused, a GET
