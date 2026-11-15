@@ -39,6 +39,8 @@ kotlin {
 
 tasks.test {
     useJUnitPlatform()
+    // As limitRequestTime() in Main does in production: the JDK reads it once, before the tests' first HttpServer
+    systemProperty("sun.net.httpserver.maxReqTime", "5")
 }
 
 // Fat JAR, the input for GraalVM native-image (see docs/development.md)

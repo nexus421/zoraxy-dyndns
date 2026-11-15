@@ -23,8 +23,10 @@ client may put its password there.
 
 ## Password guessing
 
-The plugin does not slow down failed logins: it handles requests one after another, a delay would let anyone stall
-real updates. Zoraxy's rate limit on the DynDNS host runs before the plugin sees a request and stops guessing, see
+The plugin does not slow down failed logins: a delay would hold one of its four threads and let anyone stall real
+updates. A client that stalls while sending its request, for example by announcing a body it never sends, holds
+one thread for at most 5 seconds, the others keep answering. Changes still happen one after another. Zoraxy's rate
+limit on the DynDNS host runs before the plugin sees a request and stops guessing, see
 [Deployment](deployment.md#zoraxy-setup). The end-to-end test checks that it answers 429.
 
 ## Transport
@@ -65,9 +67,10 @@ Zoraxy forwards `/plugin.ui/<id>/` only after its login and checks its CSRF toke
 before the plugin sees it. The page's script sends that token with every change, a forged form from another site
 fails at Zoraxy. On its own port the plugin serves the page and its changes only with the `X-Zoraxy-Csrf` header
 that Zoraxy's admin proxy adds. A web page in a browser on the Zoraxy host, or a request that another service on the
-host can be tricked into sending (server-side request forgery), cannot set that header and is refused. Every change is validated with the same rules as loading `config.json`, an invalid one changes
-nothing. Each change is logged as one `UI:` line, without passwords. A form body is limited to 64 KiB. Zoraxy stops the
-plugin by calling `/term` directly on the plugin's port. The same path through the admin pages is refused, a GET
+host can be tricked into sending (server-side request forgery), cannot set that header and is refused. Every change
+is validated with the same rules as loading `config.json`, an invalid one changes nothing. Each change is logged as
+one `UI:` line, without passwords. A form body is limited to 64 KiB. Zoraxy stops the plugin by calling `/term`
+directly on the plugin's port. The same path through the admin pages is refused, a GET
 there needs no CSRF token and any link an admin follows could otherwise stop the plugin.
 
 ## Files

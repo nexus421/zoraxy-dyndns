@@ -163,6 +163,18 @@ sleep 2
 codes=$(for _ in $(seq 40); do curl "${C[@]}" "${R[@]}" -o /dev/null -w '%{http_code}\n' "https://fritzbox:wrong@dyndns.test:18080/nic/update"; done | sort | uniq -c)
 contains "T33 Zoraxy rate limit stops guessing (429)" "429" "$codes"
 sleep 2
+# A client that announces a body and never sends it holds one plugin thread, the others keep answering
+python3 - <<'PY' &
+import socket, ssl, time
+ctx = ssl.create_default_context(); ctx.check_hostname = False; ctx.verify_mode = ssl.CERT_NONE
+s = ctx.wrap_socket(socket.create_connection(("127.0.0.1", 18080)), server_hostname="dyndns.test")
+s.sendall(b"POST /nic/update HTTP/1.1\r\nHost: dyndns.test\r\nContent-Length: 1000\r\n\r\n")
+time.sleep(15)
+PY
+STALL=$!; sleep 1
+contains "T54 a stalled request does not block other updates" "87.176.150.207 200" \
+  "$(curl "${C[@]}" "${R[@]}" --max-time 4 -w ' %{http_code}' "https://fritzbox:$PW@dyndns.test:18080/nic/update?myip=87.176.150.207")"
+kill $STALL 2>/dev/null; wait $STALL 2>/dev/null
 
 # --- reconcile loop --------------------------------------------------------------------------------
 admin /api/whitelist/enable -d id="$RID" -d enable=false >/dev/null

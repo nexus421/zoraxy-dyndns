@@ -7,6 +7,7 @@ import com.sun.net.httpserver.HttpServer
 import java.net.InetSocketAddress
 import java.net.URLDecoder
 import java.util.*
+import java.util.concurrent.Executors
 import kotlin.system.exitProcess
 
 /**
@@ -19,7 +20,9 @@ import kotlin.system.exitProcess
  * [UiActions]. Zoraxy only forwards `/plugin.ui/<id>/...` after its login and its CSRF check, page and actions
  * without the `X-Zoraxy-Csrf` header Zoraxy adds there are refused.
  *
- * It runs on the single dispatcher thread of the JDK server, requests are handled one after another.
+ * [THREADS] threads answer requests, so a client that stalls holds only one of them. Changes to the state and the
+ * whitelists still happen one after another, [Reconciler] and [ConfigStore] serialize them. A client gets
+ * [REQUEST_TIMEOUT_SECONDS] seconds to send its request, see [limitRequestTime].
  *
  * @param port The port Zoraxy assigned in the configure spec.
  * @param config The current config, see [ConfigStore].
@@ -42,6 +45,7 @@ class Server(
     /** Binds the port and starts serving. */
     fun start() {
         val server = HttpServer.create(InetSocketAddress("127.0.0.1", port), 16)
+        server.executor = Executors.newFixedThreadPool(THREADS) { r -> Thread(r, "http").apply { isDaemon = true } }
         server.createContext(Introspect.STATIC_INGRESS) { ex -> safely(ex) { handleUpdate(ex) } }
         server.createContext(Introspect.UI_PATH) { ex ->
             // Zoraxy calls ui_path + "/term", i.e. "/ui//term" for ui_path "/ui/"
@@ -69,7 +73,7 @@ class Server(
 
         val client = authenticate(ex)
         if (client == null) {
-            // No delay here: requests are handled one by one, a delay would let anyone stall real updates.
+            // No delay here: it would hold one of the few threads and let anyone stall real updates.
             // Zoraxy's rate limit, which runs before the plugin sees the request, stops password guessing.
             ex.responseHeaders.add("WWW-Authenticate", "Basic realm=\"dyndns\"")
             return reply(ex, 401, "badauth")
@@ -207,6 +211,22 @@ class Server(
         ex.responseBody.use { it.write(bytes) }
     }
 
+}
+
+/** Threads that answer requests. Changes stay one after another at the locks of [Reconciler] and [ConfigStore]. */
+private const val THREADS = 4
+
+/** Seconds a client may take to send its request, then the JDK closes the connection. Processing is not limited. */
+const val REQUEST_TIMEOUT_SECONDS = 5
+
+/**
+ * Lets the JDK server drop a client that stalls while sending its request, a body it announced but never sends
+ * included. The JDK reads the property once, before the first [HttpServer] is created, so [main] calls this first.
+ * `sun.net.httpserver.maxRspTime` stays unset on purpose: it would also cut a slow answer, for example while Zoraxy
+ * is slow to answer the plugin.
+ */
+fun limitRequestTime() {
+    System.setProperty("sun.net.httpserver.maxReqTime", REQUEST_TIMEOUT_SECONDS.toString())
 }
 
 /** Largest form body an action accepts. Every real form is far below. */

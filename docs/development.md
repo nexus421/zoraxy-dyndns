@@ -37,11 +37,12 @@ sudo test/e2e.sh <zoraxy-binary> build/zoraxy-dyndns
 
 [e2e.sh](../test/e2e.sh) sets up a real Zoraxy from scratch in a temporary directory (access rules, hosts, tag
 group, plugin) and configures the plugin through its page, with Zoraxy's login cookie and CSRF token, as a browser
-would. It runs 79 checks: a POST without CSRF token is rejected, clients and rules created on the page,
+would. It runs 80 checks: a POST without CSRF token is rejected, clients and rules created on the page,
 authentication, the update cycle, input validation, dual stack and parameter aliases, the three modes, fixed entries,
-the reconcile loop, deleting clients and releasing rules on the page, a config edited by hand, restarts, the page
-with its activity card, `/term`, owner only files and that no password ends up in a log or file. It needs curl, python3, openssl and root for
-port 80 (the plain HTTP case), and takes about three minutes because it waits for one reconcile cycle.
+a stalled request next to a real update, the reconcile loop, deleting clients and releasing rules on the page, a
+config edited by hand, restarts, the page with its activity card, `/term`, owner only files and that no password
+ends up in a log or file. It needs curl, python3, openssl and root for port 80 (the plain HTTP case), and takes
+about three minutes because it waits for one reconcile cycle.
 
 ## CI and release
 
@@ -106,16 +107,18 @@ or semicolons in prose. Deliberate deviation: expected outcomes are Kotlin's `Re
 
 Verified:
 
-- 157 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
+- 161 unit tests: address parsing and the public range checks, the canonical IPv6 form, query parameters and their
   aliases, config parsing and validation (strict keys, modes, fixed entries, names, hashes, the DynDNS host),
   writing `config.json` (round trip, owner only, an invalid change writes nothing), `state.json` (round trip, owner
   only, broken files, single invalid entries), every planner case of the three modes, parsing of Zoraxy's access
   list, log lines, the activity log and the introspect payload. Every action of the plugin page (valid, invalid,
   stale, unknown rules, Zoraxy unreachable, a failed reconcile after saving), the page itself (escaping, no inline
-  script or style, the password shown once, the placeholder host) and the HTTP server run against
+  script or style, the password shown once, the placeholder host) and the HTTP server (stalled requests
+  included) run against
   [FakeZoraxy](../src/test/kotlin/bayern/kickner/zoraxy/dyndns/FakeZoraxy.kt), an in-memory plugin API.
 - The end-to-end test against Zoraxy 3.3.3, 3.3.4 and 3.3.5 (`v3.3.5-rc5`), all 79 checks each, locally with the JAR
-  on the JVM inside a sandbox without network. CI runs it against 3.3.5 with the native binary.
+  on the JVM inside a sandbox without network. CI runs it against 3.3.5 with the native binary. T54 (a stalled
+  request) came later and has not run against Zoraxy yet.
 - The plugin page clicked through in the real Zoraxy iframe: adding a client, the router settings, Copy without
   HTTPS, Enter in a field, an invalid fixed entry, deleting with the second click, light and dark mode following
   Zoraxy's switch live, phone width, no CSP violation in the console.

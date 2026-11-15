@@ -59,8 +59,10 @@ Invariants, keep them when adding code:
   host names.
 - Never log passwords, the API key or query values. Every log line goes through `logLine` (the Klogger format),
   which strips control characters. Never log stack traces, they would lose their line breaks there.
-- The server handles requests one after another. Never add a delay to failed logins, Zoraxy's rate limit handles
-  guessing.
+- Four threads answer requests, changes to state, config and whitelists stay one after another at the locks of
+  `Reconciler` and `ConfigStore`. A client gets 5 seconds to send its request (`limitRequestTime`, only
+  `maxReqTime`, never `maxRspTime`, which would cut slow answers). Never add a delay to failed logins, Zoraxy's rate
+  limit handles guessing.
 - Files the plugin writes are owner only (`writeOwnerOnly`).
 - Config changes go through `ConfigStore.update`, which validates before it writes. Passwords are generated
   (`newPassword`), shown once in the answer page and stored only as SHA-256.

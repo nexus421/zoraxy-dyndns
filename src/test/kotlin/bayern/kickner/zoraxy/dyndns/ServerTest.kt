@@ -3,6 +3,7 @@ package bayern.kickner.zoraxy.dyndns
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.Proxy
+import java.net.Socket
 import java.net.URL
 import java.nio.file.Files
 import java.util.*
@@ -40,6 +41,7 @@ class ServerTest {
     private fun post(path: String, body: String, csrf: String? = token): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         conn.requestMethod = "POST"
+        conn.readTimeout = 4_000
         if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/x-www-form-urlencoded")
@@ -57,11 +59,18 @@ class ServerTest {
     private fun get(path: String, user: String? = "fritz", pw: String = password, forwardedFor: String? = null, csrf: String? = null): Answer {
         val conn = URL("http://127.0.0.1:$port$path").openConnection(Proxy.NO_PROXY) as HttpURLConnection
         if (csrf != null) conn.setRequestProperty("X-Zoraxy-Csrf", csrf)
+        conn.readTimeout = 4_000
         if (user != null) conn.setRequestProperty("Authorization", "Basic " + Base64.getEncoder().encodeToString("$user:$pw".toByteArray()))
         if (forwardedFor != null) conn.setRequestProperty("X-Forwarded-For", forwardedFor)
         val code = conn.responseCode
         val body = (if (code < 400) conn.inputStream else conn.errorStream).bufferedReader().use { it.readText() }
         return Answer(code, body, conn)
+    }
+
+    /** A POST that announces a body and never sends it, held open until closed. */
+    private fun stall(): Socket = Socket("127.0.0.1", port).apply {
+        getOutputStream().write("POST /s_capture HTTP/1.1\r\nHost: x\r\nContent-Length: 1000\r\n\r\n".toByteArray())
+        getOutputStream().flush()
     }
 
     private fun update(query: String, user: String? = "fritz", pw: String = password) = get("/s_capture$query", user, pw).let { "${it.body} ${it.code}" }
@@ -95,6 +104,25 @@ class ServerTest {
         assertEquals("badrequest not a publicly routable address: 192.168.1.1 400", update("?myip=192.168.1.1"))
         assertEquals(400, get("/s_capture?myip=%zz").code, "the JDK server rejects invalid percent-encoding itself")
         assertEquals(mapOf("93.184.215.14/32" to "<b>office</b>"), zoraxy.rules.getValue("r1").ips)
+    }
+
+    @Test
+    fun aStalledRequestDoesNotBlockOthers() {
+        stall().use {
+            Thread.sleep(300)
+            assertEquals("good 87.176.150.207 200", update("?myip=87.176.150.207"))
+        }
+    }
+
+    @Test
+    fun stalledRequestsAreDroppedAfterTheTimeLimit() {
+        val stalled = List(4) { stall() }
+        try {
+            Thread.sleep((REQUEST_TIMEOUT_SECONDS + 2) * 1000L)
+            assertEquals("good 87.176.150.207 200", update("?myip=87.176.150.207"))
+        } finally {
+            stalled.forEach(Socket::close)
+        }
     }
 
     @Test

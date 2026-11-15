@@ -28,6 +28,7 @@ private const val LOG_EVERY_NTH_FAILURE = 30
  */
 fun main(args: Array<String>) {
     if (args.firstOrNull() == "-introspect") return println(Introspect.json())
+    limitRequestTime()
     val activity = ActivityLog()
     configureLogging(activity)
 
