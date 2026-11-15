@@ -74,8 +74,13 @@ entries. `dyndns_host` is optional, a host name with an optional `:port`, only u
 
 Written only by the plugin, next to `config.json` (owner only, atomic rename). It holds the last report of every
 client and every rule the plugin has ever managed. That is how it cleans up after a client or a rule was removed
-from `config.json`, and how the whitelists survive a restart of Zoraxy or the plugin. A missing or broken file means
-an empty state: the clients report again with their next update. Deleting it is safe.
+from `config.json`, and how the whitelists survive a restart of Zoraxy or the plugin.
+
+A missing or broken file means an empty state, and the plugin starts anyway. It then knows no reported address: the
+next run removes the entries of every client from the whitelists, only fixed entries stay. In `enforce` the protected
+services are blocked until each client reports again, which a router may only do when its IP changes. Rules that
+were removed from `config.json` but still remembered in the file are no longer cleaned up. Delete the file only
+when that is acceptable, and trigger an update on every router right after.
 
 ## Warnings
 

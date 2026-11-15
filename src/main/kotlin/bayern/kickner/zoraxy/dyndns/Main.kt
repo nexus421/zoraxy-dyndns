@@ -49,6 +49,9 @@ fun main(args: Array<String>) {
         runCatching { reconciler.save() }
     })
     startReconcileLoop(reconciler)
+    // main returns here and every thread of the plugin is a daemon. The process lives on through the JDK server's
+    // "HTTP-Dispatcher" thread, which is not a daemon because Server.start() creates it from this (non-daemon) thread.
+    // Keep that in mind when replacing the server or moving start() to a daemon thread.
 }
 
 /**

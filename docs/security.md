@@ -79,7 +79,8 @@ there needs no CSRF token and any link an admin follows could otherwise stop the
 
 `config.json` and `state.json` are written owner only (`0600`), both atomically through a temporary file
 and a rename. Both are read strictly, an unknown key in `config.json` stops the plugin. A broken
-`state.json` is replaced by an empty state instead of stopping the plugin.
+`state.json` is replaced by an empty state instead of stopping the plugin. That fails closed: the clients' entries
+are removed until they report again, see [Configuration](configuration.md#statejson).
 
 ## Local access
 
