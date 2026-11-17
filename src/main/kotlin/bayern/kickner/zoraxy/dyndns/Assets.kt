@@ -125,7 +125,8 @@ details.card[open] > summary h2::before { content: "▾ "; }
 .activity .mono { overflow-wrap: anywhere; }
 
 footer { text-align: center; color: var(--muted); font-size: 12px; padding: 4px 0 20px; }
-footer a { color: var(--accent); text-decoration: none; }
+footer .guide { margin-top: 6px; display: flex; gap: 8px; align-items: center; justify-content: center; flex-wrap: wrap; }
+footer .guide code { overflow-wrap: anywhere; }
 """
 
 /**

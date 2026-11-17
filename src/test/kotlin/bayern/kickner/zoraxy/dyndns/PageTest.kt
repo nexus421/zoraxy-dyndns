@@ -145,6 +145,14 @@ class PageTest {
     }
 
     @Test
+    fun setupGuideIsCopyableTextNotALinkTheIframeWouldDrop() {
+        val footer = render().substringAfter("<footer").substringBefore("</footer>")
+        assertTrue("id=\"guide-url\">https://github.com/nexus421/zoraxy-dyndns/blob/master/docs/deployment.md</code>" in footer, footer)
+        assertTrue("data-copy=\"guide-url\"" in footer, footer)
+        assertTrue("target=" !in render())
+    }
+
+    @Test
     fun setupGuideIsOpenUntilTheFirstClient() {
         val empty = render(Config(emptyList(), emptyMap())).substringAfter("""id="setup"""").substringBefore("</details>")
         assertTrue("Setup in Zoraxy" in empty, empty)

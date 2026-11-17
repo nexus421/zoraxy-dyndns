@@ -42,6 +42,10 @@ data class PageView(
 /** Zoraxy serves `icon.png` from the plugin folder here, its own placeholder if there is none. */
 private const val ICON_URL = "/api/plugins/icon?plugin_id=bayern.kickner.zoraxy.dyndns"
 
+/**
+ * The setup guide, shown as text with a Copy button. A link cannot open it: Zoraxy's iframe has no `allow-popups`,
+ * so the browser drops a new tab, and GitHub refuses to be shown inside the iframe.
+ */
 private const val SETUP_GUIDE = "https://github.com/nexus421/zoraxy-dyndns/blob/master/docs/deployment.md"
 
 private val modeHints = mapOf(
@@ -81,8 +85,11 @@ fun renderPage(view: PageView): String = buildString {
                 footer {
                     +"zoraxy-dyndns ${BuildConfig.VERSION} · Update URL "
                     code { +"https://<client>:<password>@${view.config.dyndnsHost ?: "<zoraxy-host>"}${Introspect.CAPTURE_PATH}?myip=<ipaddr>" }
-                    +" · "
-                    a(SETUP_GUIDE, target = "_blank") { +"Setup guide" }
+                    div("guide") {
+                        +"Setup guide "
+                        code { id = "guide-url"; +SETUP_GUIDE }
+                        button(classes = "btn sm", type = ButtonType.button) { attributes["data-copy"] = "guide-url"; +"Copy" }
+                    }
                 }
             }
         }
