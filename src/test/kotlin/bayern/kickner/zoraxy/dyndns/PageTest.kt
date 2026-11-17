@@ -23,6 +23,7 @@ class PageTest {
         config: Config = this.config,
         rules: Result<Map<String, RuleSnapshot>> = Result.success(zoraxyRules),
         secret: Secret? = null,
+        status: Status = this.status,
     ) = renderPage(PageView(config, status, rules, activity.entries(), "t0k3n", secret = secret))
 
     @Test
@@ -33,6 +34,30 @@ class PageTest {
         assertTrue("fritz: good" in html)
         assertTrue("""content="t0k3n"""" in html)
     }
+
+    @Test
+    fun answersShowInWordsWithTheDyndns2AnswerAsTooltip() {
+        val labels = mapOf("good" to "updated", "nochg" to "unchanged", "badauth" to "wrong password", "badrequest" to "invalid address", "911" to "Zoraxy error")
+        labels.forEach { (answer, label) ->
+            val html = render(status = status.copy(results = mapOf("fritz" to ClientResult("$answer 87.176.150.207", 0L))))
+            assertTrue(">$label</span>" in html, label)
+            assertTrue("title=\"$answer 87.176.150.207\"" in html, answer)
+        }
+    }
+
+    @Test
+    fun aClientWithAReportShowsAsReportedAfterARestart() {
+        val html = render(status = status.copy(results = emptyMap()))
+        assertTrue(">reported</span>" in html)
+        assertTrue("never reported" !in html)
+    }
+
+    @Test
+    fun aClientWithoutAReportShowsAsNeverReported() =
+        assertTrue(">never reported</span>" in render(status = status.copy(clients = emptyMap(), results = emptyMap())))
+
+    @Test
+    fun activitySaysWhereOlderLinesAre() = assertTrue("Since the plugin last started. Older lines are in Zoraxy" in render())
 
     @Test
     fun escapesEverything() {

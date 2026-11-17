@@ -8,9 +8,11 @@ Zoraxy shows it under Plugins, DynDNS Whitelist. It follows Zoraxy's light and d
   steps as [Deployment](deployment.md#zoraxy-setup).
 
 - **DynDNS host**: the Zoraxy host with the tag `dyndns`. Only used to fill in the router settings.
-- **Clients**: per client the last answer (green `good` or `nochg`, yellow `badauth` or `badrequest`, red `911`) with
-  its time, the access rules, the last addresses and the time of the last update. A wrong password of a known client
-  shows as `badauth`, the most common mistake when setting up a router. "Add client" asks for a name and the access
+- **Clients**: per client the last answer in words (green "updated" for `good` and "unchanged" for `nochg`, yellow
+  "wrong password" for `badauth` and "invalid address" for `badrequest`, red "Zoraxy error" for `911`, the answer
+  itself shows on hover) with its time, the access rules, the last addresses and the time of the last update. The
+  answers are kept in memory only: after a restart a client shows as "reported" until its next report. A wrong
+  password of a known client shows as "wrong password", the most common mistake when setting up a router. "Add client" asks for a name and the access
   rules, "Rules" changes them, "New password" replaces the password, "Delete" removes the client and its whitelist
   entries. Replacing and deleting ask for a second click.
 - **Router settings**: after "Add client" and "New password" the page shows the password once, together with the
@@ -19,7 +21,8 @@ Zoraxy shows it under Plugins, DynDNS Whitelist. It follows Zoraxy's light and d
 - **Access rules**: mode, whitelist switch, number of entries, the clients using the rule, warnings and the fixed
   entries, see [Configuration](configuration.md).
 - **Recent activity**: the last 100 log lines of the plugin (updates, answers, changes made on the page, warnings),
-  newest first. Kept in memory only, a restart of the plugin starts it empty. The full history is in Zoraxy's log.
+  newest first. Kept in memory only, a restart of the plugin starts it empty, the card says so. The full history is in
+  Zoraxy's log.
 
 ## FRITZ!Box
 

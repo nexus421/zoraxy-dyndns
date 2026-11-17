@@ -231,7 +231,7 @@ private fun FlowContent.client(index: Int, c: Client, view: PageView, names: Map
         div {
             div("name") {
                 +c.name
-                resultPill(result)
+                resultPill(result, state)
             }
             div("pills") { c.rules.forEach { span("pill") { +(names[it] ?: it) } } }
         }
@@ -262,16 +262,28 @@ private fun FlowContent.client(index: Int, c: Client, view: PageView, names: Map
     }
 }
 
-private fun FlowContent.resultPill(result: ClientResult?) {
-    if (result == null) return span("pill dot") { +"never reported" }
-    val word = result.text.substringBefore(' ')
-    val kind = when (word) {
-        "good", "nochg" -> "ok"
-        "911" -> "error"
-        else -> "warn"
+/**
+ * The last answer to a client in words, the dyndns2 answer itself as tooltip. The answers live in memory only:
+ * after a restart a client with a report in state.json shows as reported until it reports again.
+ */
+private fun FlowContent.resultPill(result: ClientResult?, state: ClientState?) {
+    if (result == null && state != null) return span("pill dot ok") {
+        title = "Reported before the plugin started, the answer shows with the next report"
+        +"reported"
     }
-    span("pill dot $kind") { title = result.text; +word }
+    if (result == null) return span("pill dot") { +"never reported" }
+    val (label, kind) = answerLabels[result.text.substringBefore(' ')] ?: (result.text.substringBefore(' ') to "warn")
+    span("pill dot $kind") { title = result.text; +label }
 }
+
+/** dyndns2 answer to the label and pill style the page shows for it. */
+private val answerLabels = mapOf(
+    "good" to ("updated" to "ok"),
+    "nochg" to ("unchanged" to "ok"),
+    "badauth" to ("wrong password" to "warn"),
+    "badrequest" to ("invalid address" to "warn"),
+    "911" to ("Zoraxy error" to "error"),
+)
 
 private fun FlowContent.nameForm(action: String, name: String, label: String, confirm: String, classes: String) {
     form(action = action, method = FormMethod.post) {
@@ -381,7 +393,8 @@ private fun FlowContent.activity(entries: List<ActivityEntry>) {
     details("card") {
         id = "activity"
         summary { h2 { +"Recent activity (${entries.size})" } }
-        if (entries.isEmpty()) div("muted small") { +"Nothing logged since the plugin started." }
+        div("muted small") { +"Since the plugin last started. Older lines are in Zoraxy's log." }
+        if (entries.isEmpty()) div("muted small") { +"Nothing logged yet." }
         ul("activity") {
             entries.forEach { e ->
                 li {
